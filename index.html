@@ -1,1 +1,81 @@
 
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>销售运气系统 V3.0</title>
+  <style>
+    body {
+      font-family: Arial;
+      text-align: center;
+      background: #111;
+      color: #fff;
+    }
+
+    button {
+      padding: 15px 30px;
+      font-size: 18px;
+      margin-top: 20px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: gold;
+    }
+
+    .result {
+      margin-top: 30px;
+      font-size: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>销售运气系统 V3.0</h1>
+
+  <button onclick="generateLuck()">生成今日运势</button>
+
+  <div class="result" id="result"></div>
+
+  <script>
+    function generateLuck() {
+
+      // 模拟 userId（第一版不用登录）
+      const userId = "user123";
+
+      // 获取今天日期
+      const date = new Date().toISOString().slice(0, 10);
+
+      // hash逻辑
+      const str = userId + date;
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash += str.charCodeAt(i);
+      }
+
+      const score = hash % 100;
+
+      let level = "";
+      let text = "";
+
+      if (score >= 80) {
+        level = "大吉";
+        text = "今天你不成交，客户都觉得遗憾。";
+      } else if (score >= 50) {
+        level = "中吉";
+        text = "机会有，但你需要主动一点。";
+      } else {
+        level = "小凶";
+        text = "今天适合铺垫关系，不适合成交。";
+      }
+
+      document.getElementById("result").innerHTML = `
+        🎯 运势分数：${score}<br>
+        🔮 运势等级：${level}<br>
+        💬 今日提示：${text}
+      `;
+    }
+  </script>
+
+</body>
+</html>
