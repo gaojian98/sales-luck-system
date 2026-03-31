@@ -42,6 +42,11 @@
 
 <div id="spinResult" class="result"></div>
   <script>
+  let points = 50;
+
+function updatePoints() {
+  document.getElementById("points").innerText = "💰 当前积分：" + points;
+}  
     function generateLuck() {
 
       // 模拟 userId（第一版不用登录）
