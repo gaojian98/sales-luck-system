@@ -1,263 +1,291 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <title>测试转盘</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>销售运气系统 V3.0</title>
   <style>
-    body { background:#111; color:#fff; text-align:center; }
-    canvas { margin-top:20px; background:#222; border-radius:50%; }
-    button { padding:10px 20px; margin-top:20px; }
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #fff;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 420px;
+      margin: 0 auto;
+      padding: 30px 20px 60px;
+    }
+
+    h1 {
+      margin-bottom: 24px;
+      font-size: 28px;
+      font-weight: bold;
+    }
+
+    .wheel-wrap {
+      position: relative;
+      width: 300px;
+      margin: 0 auto 20px;
+    }
+
+    .pointer {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 34px;
+      line-height: 1;
+      z-index: 2;
+    }
+
+    canvas {
+      display: block;
+      width: 300px;
+      height: 300px;
+      margin: 0 auto;
+      background: #222;
+      border-radius: 50%;
+    }
+
+    .info {
+      margin-top: 18px;
+      line-height: 1.8;
+      font-size: 18px;
+    }
+
+    .buttons {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 12px 22px;
+      font-size: 18px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: gold;
+      color: #111;
+      font-weight: bold;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .result-box {
+      margin-top: 20px;
+      min-height: 72px;
+      font-size: 20px;
+      line-height: 1.8;
+    }
+
+    .tip {
+      margin-top: 28px;
+      font-size: 14px;
+      color: #bbb;
+    }
   </style>
 </head>
-  <canvas id="wheel" width="300" height="300"></canvas>
-
-
 <body>
+  <div class="container">
+    <h1>销售运气系统 V3.0</h1>
 
-<h1>销售运气系统 V3.0</h1>
+    <div class="wheel-wrap">
+      <div class="pointer">▼</div>
+      <canvas id="wheel" width="300" height="300"></canvas>
+    </div>
 
-<button onclick="generateLuck()">查看今日运势</button>
+    <div class="info">
+      <div id="points">💰 当前积分：50</div>
+      <div id="result">🎯 运势分数：--<br>🔮 运势等级：--<br>💬 今日提示：点击按钮查看今日运势</div>
+      <div id="spinResult">🎯 抽奖结果：--</div>
+    </div>
 
-<div id="result"></div>
+    <div class="buttons">
+      <button onclick="generateLuck()">查看今日运势</button>
+      <button onclick="spin()">开始抽奖</button>
+    </div>
 
-<div id="points"></div>
+    <div class="tip">
+      本产品为娱乐体验，不构成现实建议
+    </div>
+  </div>
 
-<!-- 指针 -->
-<div style="
-  position:absolute;
-  top:20px;
-  left:50%;
-  transform:translateX(-50%);
-  font-size:30px;
-">
-▼
-</div>
+  <script>
+    const canvas = document.getElementById("wheel");
+    const ctx = canvas.getContext("2d");
 
-<!-- 只保留一个转盘 -->
-<canvas id="wheel" width="300" height="300"></canvas>
+    const rewards = ["谢谢参与", "10积分", "50积分", "100积分", "再来一次"];
+    const colors = ["#444", "#666", "#888", "#aaa", "#ccc"];
 
-<!-- 只保留一个按钮 -->
-<button onclick="spin()">开始抽奖</button>
+    let points = 50;
+    let angle = 0;
+    let spinning = false;
+    let dailyFree = 1;
 
-<div id="spinResult"></div>
-
-</body>
-
-<script>
-// =====================
-// 🎡 基础初始化
-// =====================
-const canvas = document.getElementById("wheel");
-const ctx = canvas.getContext("2d");
-
-const rewards = ["谢谢参与","10积分","50积分","100积分","再来一次"];
-const colors = ["#444","#666","#888","#aaa","#ccc"];
-
-let points = localStorage.getItem("points") 
-  ? parseInt(localStorage.getItem("points")) 
-  : 50;
-let angle = 0;
-let spinning = false;
-
-// =====================
-// 💰 积分更新
-// =====================
-function updatePoints(){
-  document.getElementById("points").innerText="💰 当前积分："+points;
-}
-
-// =====================
-// 🔮 运势系统（你原版逻辑恢复）
-// =====================
-function generateLuck(){
-
-  const userId="user123";
-  const date=new Date().toISOString().slice(0,10);
-
-  let hash=0;
-  const str=userId+date;
-
-  for(let i=0;i<str.length;i++){
-    hash+=str.charCodeAt(i);
-  }
-
-  const score=hash%100;
-
-  let level="",text="";
-
-  if(score>=80){
-    level="大吉";
-    text="今天你不成交，客户都觉得遗憾。";
-  }else if(score>=50){
-    level="中吉";
-    text="机会有，但你需要主动一点。";
-  }else{
-    level="小凶";
-    text="今天适合铺垫关系，不适合成交。";
-  }
-
-  document.getElementById("result").innerHTML=
-    `🎯 运势分数：${score}<br>
-     🔮 运势等级：${level}<br>
-     💬 今日提示：${text}`;
-}
-
-// =====================
-// 🎡 转盘绘制
-// =====================
-function drawWheel(angleDeg){
-  if (!Number.isFinite(angleDeg)) angleDeg = 0;
-  const arc=Math.PI*2/rewards.length;
-
-  ctx.clearRect(0,0,300,300);
-
-  ctx.save();
-  ctx.translate(150,150);
-  ctx.rotate(angleDeg*Math.PI/180);
-  ctx.translate(-150,-150);
-
-  for(let i=0;i<rewards.length;i++){
-    ctx.beginPath();
-    ctx.fillStyle=colors[i];
-    ctx.moveTo(150,150);
-    ctx.arc(150,150,150,arc*i,arc*(i+1));
-    ctx.fill();
-
-    ctx.save();
-    ctx.fillStyle="#000";
-    ctx.translate(150,150);
-    ctx.rotate(arc*i+arc/2);
-    ctx.fillText(rewards[i],60,10);
-    ctx.restore();
-  }
-
-  ctx.restore();
-}
-
-// =====================
-// 🎯 抽奖系统（带动画）
-// =====================
-let dailyFree = 1; // 👈 放在全局（函数外面）
-
-function spin(){
-
-  if(spinning) return;
-
-  // ✅ ⭐ 插在这里（最关键位置）
-  if(dailyFree > 0){
-    dailyFree--;
-  }else{
-    if(points < 10){
-      alert("积分不足！");
-      return;
+    function updatePoints() {
+      const el = document.getElementById("points");
+      if (el) {
+        el.innerText = "💰 当前积分：" + points;
+      }
     }
-    points -= 10;
-  }
 
-  updatePoints();
+    function generateLuck() {
+      const userId = "user123";
+      const date = new Date().toISOString().slice(0, 10);
 
-  if(spinning) return;
+      let hash = 0;
+      const str = userId + date;
 
-  if(points<10){
-    alert("积分不足！");
-    return;
-  }
+      for (let i = 0; i < str.length; i++) {
+        hash += str.charCodeAt(i);
+      }
 
-  points-=10;
-  function updatePoints(){
-  document.getElementById("points").innerText = "💰 当前积分：" + points;
+      const score = hash % 100;
 
-  // ⭐ 保存到本地
-  localStorage.setItem("points", points);
-}
+      let level = "";
+      let text = "";
 
-  spinning=true;
+      if (score >= 80) {
+        level = "大吉";
+        text = "今天你不成交，客户都觉得遗憾。";
+      } else if (score >= 50) {
+        level = "中吉";
+        text = "机会有，但你需要主动一点。";
+      } else {
+        level = "小凶";
+        text = "今天适合铺垫关系，不适合成交。";
+      }
 
-  const rand=Math.random()*100;
-  let index=0;
-  let reward="";
-  let winPoints=0;
+      document.getElementById("result").innerHTML =
+        `🎯 运势分数：${score}<br>🔮 运势等级：${level}<br>💬 今日提示：${text}`;
+    }
 
-  if(rand<40){
-    index=0;
-    reward="谢谢参与 😢";
-  }else if(rand<70){
-    index=1;
-    reward="10积分 🎉";
-    winPoints=10;
-  }else if(rand<85){
-    index=2;
-    reward="50积分 💰";
-    winPoints=50;
-  }else if(rand<95){
-    index=3;
-    reward="100积分 🚀";
-    winPoints=100;
-  }else{
-    index=4;
-    reward="再来一次 🔁";
-  }
+    function drawWheel(angleDeg) {
+      if (!Number.isFinite(angleDeg)) angleDeg = 0;
 
-  const arc = 360 / rewards.length;
+      const arc = Math.PI * 2 / rewards.length;
+      ctx.clearRect(0, 0, 300, 300);
 
-const currentAngle = Number(angle) || 0;
-const finalAngle = 360 - index * arc - arc / 2;
-const normalizedCurrent = ((currentAngle % 360) + 360) % 360;
-const target = currentAngle + 360 * 5 + ((finalAngle - normalizedCurrent + 360) % 360);
+      ctx.save();
+      ctx.translate(150, 150);
+      ctx.rotate(angleDeg * Math.PI / 180);
+      ctx.translate(-150, -150);
 
-let current = currentAngle;
+      for (let i = 0; i < rewards.length; i++) {
+        ctx.beginPath();
+        ctx.fillStyle = colors[i];
+        ctx.moveTo(150, 150);
+        ctx.arc(150, 150, 150, arc * i, arc * (i + 1));
+        ctx.closePath();
+        ctx.fill();
 
-  function animate() {
-  current += (target - current) * 0.1;
+        ctx.save();
+        ctx.fillStyle = "#000";
+        ctx.font = "18px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.translate(150, 150);
+        ctx.rotate(arc * i + arc / 2);
+        ctx.fillText(rewards[i], 90, 0);
+        ctx.restore();
+      }
 
-  if (!Number.isFinite(current)) {
-    spinning = false;
-    return;
-  }
+      ctx.restore();
+    }
 
-  angle = current;
-  drawWheel(angle);
+    function spin() {
+      if (spinning) return;
 
-  if (Math.abs(target - current) < 1) {
-    angle = target;
-    drawWheel(angle);
+      if (dailyFree > 0) {
+        dailyFree--;
+      } else {
+        if (points < 10) {
+          alert("积分不足！");
+          return;
+        }
+        points -= 10;
+      }
 
-    spinning = false;
-    points += winPoints;
-    updatePoints();
-
-    document.getElementById("spinResult").innerHTML =
-      "🎯 抽奖结果：" + reward;
-    return;
-  }
-
-  requestAnimationFrame(animate);
-}
-
-requestAnimationFrame(animate);
-    angle=current;
-    drawWheel(angle);
-
-    if(Math.abs(target-current)<0.5){
-      clearInterval(timer);
-      spinning=false;
-
-      points+=winPoints;
       updatePoints();
+      spinning = true;
 
-      document.getElementById("spinResult").innerHTML=
-        "🎯 抽奖结果："+reward;
+      const rand = Math.random() * 100;
+      let index = 0;
+      let reward = "";
+      let winPoints = 0;
+
+      if (rand < 40) {
+        index = 0;
+        reward = "谢谢参与 😢";
+      } else if (rand < 70) {
+        index = 1;
+        reward = "10积分 🎉";
+        winPoints = 10;
+      } else if (rand < 85) {
+        index = 2;
+        reward = "50积分 💰";
+        winPoints = 50;
+      } else if (rand < 95) {
+        index = 3;
+        reward = "100积分 🚀";
+        winPoints = 100;
+      } else {
+        index = 4;
+        reward = "再来一次 🔁";
+      }
+
+      const arc = 360 / rewards.length;
+      const currentAngle = Number(angle) || 0;
+      const finalAngle = 360 - index * arc - arc / 2;
+      const normalizedCurrent = ((currentAngle % 360) + 360) % 360;
+      const target = currentAngle + 360 * 5 + ((finalAngle - normalizedCurrent + 360) % 360);
+
+      let current = currentAngle;
+
+      function animate() {
+        current += (target - current) * 0.1;
+
+        if (!Number.isFinite(current)) {
+          spinning = false;
+          return;
+        }
+
+        angle = current;
+        drawWheel(angle);
+
+        if (Math.abs(target - current) < 1) {
+          angle = target;
+          drawWheel(angle);
+
+          spinning = false;
+          points += winPoints;
+          updatePoints();
+
+          document.getElementById("spinResult").innerHTML =
+            "🎯 抽奖结果：" + reward;
+          return;
+        }
+
+        requestAnimationFrame(animate);
+      }
+
+      requestAnimationFrame(animate);
     }
-  },20);
-}
 
-// =====================
-// 初始化
-// =====================
-updatePoints();
-drawWheel(0);
-  
-</script>
-
+    updatePoints();
+    drawWheel(0);
+  </script>
 </body>
 </html>
