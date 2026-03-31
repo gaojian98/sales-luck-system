@@ -129,12 +129,15 @@
     const rewards = ["谢谢参与", "10积分", "50积分", "100积分", "再来一次"];
     const colors = ["#444", "#666", "#888", "#aaa", "#ccc"];
 
-    let points = 50;
+    let points = localStorage.getItem("points")
+  ? parseInt(localStorage.getItem("points"))
+  : 50;
     let angle = 0;
     let spinning = false;
     let dailyFree = 1;
 
     function updatePoints() {
+      localStorage.setItem("points", points);
       const el = document.getElementById("points");
       if (el) {
         el.innerText = "💰 当前积分：" + points;
