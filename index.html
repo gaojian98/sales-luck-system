@@ -191,10 +191,14 @@ function spin(){
     reward="再来一次 🔁";
   }
 
-  const arc=360/rewards.length;
-  const finalAngle = 360 - index * arc - arc / 2;
-const target = angle + 360 * 5 + ((finalAngle - (angle % 360) + 360) % 360);
-  let current=angle;
+  const arc = 360 / rewards.length;
+
+const currentAngle = Number(angle) || 0;
+const finalAngle = 360 - index * arc - arc / 2;
+const normalizedCurrent = ((currentAngle % 360) + 360) % 360;
+const target = currentAngle + 360 * 5 + ((finalAngle - normalizedCurrent + 360) % 360);
+
+let current = currentAngle;
 
   function animate() {
   current += (target - current) * 0.1;
