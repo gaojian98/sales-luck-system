@@ -47,7 +47,9 @@ const ctx = canvas.getContext("2d");
 const rewards = ["谢谢参与","10积分","50积分","100积分","再来一次"];
 const colors = ["#444","#666","#888","#aaa","#ccc"];
 
-let points = 50;
+let points = localStorage.getItem("points") 
+  ? parseInt(localStorage.getItem("points")) 
+  : 50;
 let angle = 0;
 let spinning = false;
 
@@ -155,7 +157,12 @@ function spin(){
   }
 
   points-=10;
-  updatePoints();
+  function updatePoints(){
+  document.getElementById("points").innerText = "💰 当前积分：" + points;
+
+  // ⭐ 保存到本地
+  localStorage.setItem("points", points);
+}
 
   spinning=true;
 
