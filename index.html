@@ -1,85 +1,148 @@
-<script>
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>销售运气系统 V3.0</title>
 
-// ✅ 积分
-let points = 50;
+  <style>
+    body {
+      font-family: Arial;
+      text-align: center;
+      background: #111;
+      color: #fff;
+    }
 
-// ✅ 更新积分显示
-function updatePoints() {
-  document.getElementById("points").innerText = "💰 当前积分：" + points;
-}
+    button {
+      padding: 15px 30px;
+      font-size: 18px;
+      margin-top: 20px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: gold;
+    }
 
-// ✅ 运势函数（独立）
-function generateLuck() {
+    .result {
+      margin-top: 30px;
+      font-size: 20px;
+    }
+  </style>
+</head>
 
-  const userId = "user123";
-  const date = new Date().toISOString().slice(0, 10);
+<body>
 
-  const str = userId + date;
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash += str.charCodeAt(i);
-  }
+  <h1>销售运气系统 V3.0</h1>
 
-  const score = hash % 100;
+  <!-- 运势按钮 -->
+  <button onclick="generateLuck()">生成今日运势</button>
 
-  let level = "";
-  let text = "";
+  <!-- 运势结果 -->
+  <div class="result" id="result"></div>
 
-  if (score >= 80) {
-    level = "大吉";
-    text = "今天你不成交，客户都觉得遗憾。";
-  } else if (score >= 50) {
-    level = "中吉";
-    text = "机会有，但你需要主动一点。";
-  } else {
-    level = "小凶";
-    text = "今天适合铺垫关系，不适合成交。";
-  }
+  <!-- 积分 -->
+  <div id="points">💰 当前积分：50</div>
 
-  document.getElementById("result").innerHTML = `
-    🎯 运势分数：${score}<br>
-    🔮 运势等级：${level}<br>
-    💬 今日提示：${text}
-  `;
-}
+  <!-- 抽奖按钮 -->
+  <button onclick="spin()">🎡 开始抽奖（消耗10积分）</button>
 
-// ✅ 抽奖函数（必须独立！！）
-function spin() {
+  <!-- 抽奖结果 -->
+  <div id="spinResult" class="result"></div>
 
-  if (points < 10) {
-    alert("积分不足，建议提升运势 🔋");
-    return;
-  }
+  <script>
 
-  points -= 10;
+    // =====================
+    // 积分系统
+    // =====================
+    let points = 50;
 
-  const rand = Math.random() * 100;
-  let reward = "";
-  let winPoints = 0;
+    function updatePoints() {
+      document.getElementById("points").innerText = "💰 当前积分：" + points;
+    }
 
-  if (rand < 40) {
-    reward = "谢谢参与 😢";
-  } else if (rand < 70) {
-    reward = "获得10积分 🎉";
-    winPoints = 10;
-  } else if (rand < 85) {
-    reward = "获得50积分 💰";
-    winPoints = 50;
-  } else if (rand < 95) {
-    reward = "获得100积分 🚀";
-    winPoints = 100;
-  } else {
-    reward = "再来一次 🔁";
-  }
+    // =====================
+    // 运势系统
+    // =====================
+    function generateLuck() {
 
-  points += winPoints;
-  updatePoints();
+      const userId = "user123";
+      const date = new Date().toISOString().slice(0, 10);
 
-  document.getElementById("spinResult").innerHTML =
-    "🎯 抽奖结果：" + reward;
-}
+      const str = userId + date;
+      let hash = 0;
 
-// ✅ 页面加载初始化
-updatePoints();
+      for (let i = 0; i < str.length; i++) {
+        hash += str.charCodeAt(i);
+      }
 
-</script>
+      const score = hash % 100;
+
+      let level = "";
+      let text = "";
+
+      if (score >= 80) {
+        level = "大吉";
+        text = "今天你不成交，客户都觉得遗憾。";
+      } else if (score >= 50) {
+        level = "中吉";
+        text = "机会有，但你需要主动一点。";
+      } else {
+        level = "小凶";
+        text = "今天适合铺垫关系，不适合成交。";
+      }
+
+      document.getElementById("result").innerHTML = `
+        🎯 运势分数：${score}<br>
+        🔮 运势等级：${level}<br>
+        💬 今日提示：${text}
+      `;
+    }
+
+    // =====================
+    // 抽奖系统
+    // =====================
+    function spin() {
+
+      if (points < 10) {
+        alert("积分不足，建议提升运势 🔋");
+        return;
+      }
+
+      points -= 10;
+
+      const rand = Math.random() * 100;
+      let reward = "";
+      let winPoints = 0;
+
+      if (rand < 40) {
+        reward = "谢谢参与 😢";
+      } else if (rand < 70) {
+        reward = "获得10积分 🎉";
+        winPoints = 10;
+      } else if (rand < 85) {
+        reward = "获得50积分 💰";
+        winPoints = 50;
+      } else if (rand < 95) {
+        reward = "获得100积分 🚀";
+        winPoints = 100;
+      } else {
+        reward = "再来一次 🔁";
+      }
+
+      points += winPoints;
+      updatePoints();
+
+      document.getElementById("spinResult").innerHTML =
+        "🎯 抽奖结果：" + reward;
+    }
+
+    // 页面初始化
+    updatePoints();
+
+  </script>
+
+</body>
+</html>
+
+
+
+
