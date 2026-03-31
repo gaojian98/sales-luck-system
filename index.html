@@ -116,14 +116,26 @@
       <button onclick="generateLuck()">查看今日运势</button>
       <button onclick="spin()">开始抽奖</button>
     </div>
-<div style="margin-top: 15px;">
+    
+<div style="margin-top:15px; display:flex; flex-direction:column; gap:10px;">
+
+  <!-- 主转化按钮 -->
   <button 
-    <button onclick="window.open('https://t.me/你的账号')">
-🔥 提升运势（联系客服）
-</button>
+    onclick="window.open('https://t.me/你的账号')" 
     style="background: linear-gradient(45deg, #ff4d4d, #ff9900); color:#fff;">
-    🔥 提升运势（增强中奖率）
+    🔥 提升运势（联系客服）
   </button>
+
+  <!-- Telegram -->
+  <button onclick="window.open('https://t.me/你的账号')">
+    📩 Telegram联系我
+  </button>
+
+  <!-- WhatsApp -->
+  <button onclick="window.open('https://wa.me/你的号码')">
+    💬 WhatsApp联系我
+  </button>
+
 </div>
     <div class="tip">
       相信高维能量、做到事半功倍
