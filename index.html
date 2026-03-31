@@ -196,21 +196,28 @@ function spin(){
 const target = angle + 360 * 5 + ((finalAngle - (angle % 360) + 360) % 360);
   let current=angle;
 
-  const timer=setInterval(()=>{
-   let speed = 20;
-
-const timer = setInterval(()=>{
-  current += speed;
-  speed *= 0.97;
-
+  function animate() {
+  current += (target - current) * 0.1;
   angle = current;
   drawWheel(angle);
 
-  if(speed < 0.5){
-    clearInterval(timer);
+  if (Math.abs(target - current) < 0.5) {
+    angle = target;
+    drawWheel(angle);
+
     spinning = false;
+    points += winPoints;
+    updatePoints();
+
+    document.getElementById("spinResult").innerHTML =
+      "🎯 抽奖结果：" + reward;
+    return;
   }
-},20);
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
     angle=current;
     drawWheel(angle);
 
