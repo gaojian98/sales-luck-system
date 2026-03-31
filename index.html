@@ -128,7 +128,24 @@ function drawWheel(angleDeg){
 // =====================
 // 🎯 抽奖系统（带动画）
 // =====================
+let dailyFree = 1; // 👈 放在全局（函数外面）
+
 function spin(){
+
+  if(spinning) return;
+
+  // ✅ ⭐ 插在这里（最关键位置）
+  if(dailyFree > 0){
+    dailyFree--;
+  }else{
+    if(points < 10){
+      alert("积分不足！");
+      return;
+    }
+    points -= 10;
+  }
+
+  updatePoints();
 
   if(spinning) return;
 
@@ -173,7 +190,20 @@ function spin(){
   let current=angle;
 
   const timer=setInterval(()=>{
-    current+=(target-current)*0.1;
+   let speed = 20;
+
+const timer = setInterval(()=>{
+  current += speed;
+  speed *= 0.97;
+
+  angle = current;
+  drawWheel(angle);
+
+  if(speed < 0.5){
+    clearInterval(timer);
+    spinning = false;
+  }
+},20);
     angle=current;
     drawWheel(angle);
 
