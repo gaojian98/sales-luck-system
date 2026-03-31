@@ -176,7 +176,103 @@ function drawWheel() {
 }
 
 // 初始化绘制
-drawWheel();
+function drawWheelWithRotation(angleDeg) {
+  const arc = Math.PI * 2 / rewards.length;
+
+  ctx.clearRect(0, 0, 300, 300);
+
+  ctx.save();
+  ctx.translate(150, 150);
+  ctx.rotate(angleDeg * Math.PI / 180);
+  ctx.translate(-150, -150);
+
+  for (let i = 0; i < rewards.length; i++) {
+    ctx.beginPath();
+    ctx.fillStyle = colors[i];
+    ctx.moveTo(150, 150);
+    ctx.arc(150, 150, 150, arc * i, arc * (i + 1));
+    ctx.fill();
+
+    ctx.save();
+    ctx.fillStyle = "#000";
+    ctx.translate(150, 150);
+    ctx.rotate(arc * i + arc / 2);
+    ctx.fillText(rewards[i], 60, 10);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+ let angle = 0;
+let spinning = false;
+
+function spin() {
+
+  if (spinning) return;
+
+  if (points < 10) {
+    alert("积分不足！");
+    return;
+  }
+
+  points -= 10;
+  updatePoints();
+
+  spinning = true;
+
+  // 🎯 随机中奖
+  const rand = Math.random() * 100;
+  let index = 0;
+  let reward = "";
+  let winPoints = 0;
+
+  if (rand < 40) {
+    index = 0;
+    reward = "谢谢参与 😢";
+  } else if (rand < 70) {
+    index = 1;
+    reward = "10积分 🎉";
+    winPoints = 10;
+  } else if (rand < 85) {
+    index = 2;
+    reward = "50积分 💰";
+    winPoints = 50;
+  } else if (rand < 95) {
+    index = 3;
+    reward = "100积分 🚀";
+    winPoints = 100;
+  } else {
+    index = 4;
+    reward = "再来一次 🔁";
+  }
+
+  const arc = 360 / rewards.length;
+
+  // 🎡 计算最终角度（多转几圈 + 停在目标）
+  const targetAngle = 360 * 5 + (360 - index * arc - arc / 2);
+
+  let current = angle;
+  let step = 0;
+
+  const timer = setInterval(() => {
+    step += 5;
+    current += (targetAngle - current) * 0.1;
+
+    angle = current;
+    drawWheelWithRotation(angle);
+
+    if (Math.abs(targetAngle - current) < 0.5) {
+      clearInterval(timer);
+      spinning = false;
+
+      points += winPoints;
+      updatePoints();
+
+      document.getElementById("spinResult").innerHTML =
+        "🎯 抽奖结果：" + reward;
+    }
+  }, 20);
+}   
   </script>
 
 </body>
