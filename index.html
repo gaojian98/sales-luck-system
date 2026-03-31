@@ -50,136 +50,22 @@
   <div id="spinResult" class="result"></div>
 
   <script>
+<script>
+// =====================
+// 🎡 Canvas初始化
+// =====================
 const canvas = document.getElementById("wheel");
 const ctx = canvas.getContext("2d");
 
 const rewards = ["谢谢参与", "10积分", "50积分", "100积分", "再来一次"];
 const colors = ["#444", "#666", "#888", "#aaa", "#ccc"];
-    // =====================
-    // 积分系统
-    // =====================
-    let points = 50;
 
-    function updatePoints() {
-      document.getElementById("points").innerText = "💰 当前积分：" + points;
-    }
+let angle = 0;
+let spinning = false;
 
-    // =====================
-    // 运势系统
-    // =====================
-    function generateLuck() {
-
-      const userId = "user123";
-      const date = new Date().toISOString().slice(0, 10);
-
-      const str = userId + date;
-      let hash = 0;
-
-      for (let i = 0; i < str.length; i++) {
-        hash += str.charCodeAt(i);
-      }
-
-      const score = hash % 100;
-
-      let level = "";
-      let text = "";
-
-      if (score >= 80) {
-        level = "大吉";
-        text = "今天你不成交，客户都觉得遗憾。";
-      } else if (score >= 50) {
-        level = "中吉";
-        text = "机会有，但你需要主动一点。";
-      } else {
-        level = "小凶";
-        text = "今天适合铺垫关系，不适合成交。";
-      }
-
-      document.getElementById("result").innerHTML = `
-        🎯 运势分数：${score}<br>
-        🔮 运势等级：${level}<br>
-        💬 今日提示：${text}
-      `;
-    }
-
-    // =====================
-    // 抽奖系统
-    // =====================
-    function spin() {
-
-      if (points < 10) {
-        alert("积分不足，建议提升运势 🔋");
-        return;
-      }
-
-      points -= 10;
-
-      const rand = Math.random() * 100;
-      let reward = "";
-      let winPoints = 0;
-
-      if (rand < 40) {
-        reward = "谢谢参与 😢";
-      } else if (rand < 70) {
-        reward = "获得10积分 🎉";
-        winPoints = 10;
-      } else if (rand < 85) {
-        reward = "获得50积分 💰";
-        winPoints = 50;
-      } else if (rand < 95) {
-        reward = "获得100积分 🚀";
-        winPoints = 100;
-      } else {
-        reward = "再来一次 🔁";
-      }
-
-      points += winPoints;
-      updatePoints();
-
-      document.getElementById("spinResult").innerHTML =
-        "🎯 抽奖结果：" + reward;
-    }
-
-    // 页面初始化
-    drawWheel(0);
 // =====================
-// 🎡 转盘绘制
+// 🎡 画转盘
 // =====================
-
-const canvas = document.getElementById("wheel");
-const ctx = canvas.getContext("2d");
-
-const rewards = [
-  "谢谢参与",
-  "10积分",
-  "50积分",
-  "100积分",
-  "再来一次"
-];
-
-const colors = ["#444", "#666", "#888", "#aaa", "#ccc"];
-
-function drawWheel() {
-  const arc = Math.PI * 2 / rewards.length;
-
-  for (let i = 0; i < rewards.length; i++) {
-    ctx.beginPath();
-    ctx.fillStyle = colors[i];
-    ctx.moveTo(150, 150);
-    ctx.arc(150, 150, 150, arc * i, arc * (i + 1));
-    ctx.fill();
-
-    // 写文字
-    ctx.save();
-    ctx.fillStyle = "#000";
-    ctx.translate(150, 150);
-    ctx.rotate(arc * i + arc / 2);
-    ctx.fillText(rewards[i], 60, 10);
-    ctx.restore();
-  }
-}
-
-// 初始化绘制
 function drawWheel(angleDeg) {
   const arc = Math.PI * 2 / rewards.length;
 
@@ -207,11 +93,11 @@ function drawWheel(angleDeg) {
 
   ctx.restore();
 }
- let angle = 0;
-let spinning = false;
 
+// =====================
+// 🎯 抽奖逻辑（带动画）
+// =====================
 function spin() {
-
   if (spinning) return;
 
   if (points < 10) {
@@ -224,7 +110,6 @@ function spin() {
 
   spinning = true;
 
-  // 🎯 随机中奖
   const rand = Math.random() * 100;
   let index = 0;
   let reward = "";
@@ -251,15 +136,11 @@ function spin() {
   }
 
   const arc = 360 / rewards.length;
-
-  // 🎡 计算最终角度（多转几圈 + 停在目标）
   const targetAngle = 360 * 5 + (360 - index * arc - arc / 2);
 
   let current = angle;
-  let step = 0;
 
   const timer = setInterval(() => {
-    step += 5;
     current += (targetAngle - current) * 0.1;
 
     angle = current;
@@ -276,7 +157,13 @@ function spin() {
         "🎯 抽奖结果：" + reward;
     }
   }, 20);
-}   
+}
+
+// =====================
+// 初始化
+// =====================
+drawWheel(0);
+</script>
   </script>
 
 </body>
