@@ -17,19 +17,36 @@
 
 <div id="spinResult"></div>
 
+<body>
+
+<h1>销售运气系统 V3.0</h1>
+
 <button onclick="generateLuck()">查看今日运势</button>
 
-<button onclick="spin()">开始抽奖</button>
-  <div style="
+<div id="result"></div>
+
+<div id="points"></div>
+
+<!-- 指针 -->
+<div style="
   position:absolute;
-  top:0;
+  top:20px;
   left:50%;
   transform:translateX(-50%);
   font-size:30px;
 ">
 ▼
 </div>
-<body>
+
+<!-- 只保留一个转盘 -->
+<canvas id="wheel" width="300" height="300"></canvas>
+
+<!-- 只保留一个按钮 -->
+<button onclick="spin()">开始抽奖</button>
+
+<div id="spinResult"></div>
+
+</body>
 
 <h2>转盘测试</h2>
 
