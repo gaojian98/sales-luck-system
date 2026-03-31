@@ -203,10 +203,16 @@ let current = currentAngle;
 
   function animate() {
   current += (target - current) * 0.1;
+
+  if (!Number.isFinite(current)) {
+    spinning = false;
+    return;
+  }
+
   angle = current;
   drawWheel(angle);
 
-  if (Math.abs(target - current) < 0.5) {
+  if (Math.abs(target - current) < 1) {
     angle = target;
     drawWheel(angle);
 
