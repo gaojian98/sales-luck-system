@@ -47,7 +47,40 @@
 function updatePoints() {
   document.getElementById("points").innerText = "💰 当前积分：" + points;
 }  
-    function generateLuck() {
+    function generateLuck() {function spin() {
+
+  if (points < 10) {
+    alert("积分不足，建议提升运势 🔋");
+    return;
+  }
+
+  points -= 10;
+
+  const rand = Math.random() * 100;
+  let reward = "";
+  let winPoints = 0;
+
+  if (rand < 40) {
+    reward = "谢谢参与 😢";
+  } else if (rand < 70) {
+    reward = "获得10积分 🎉";
+    winPoints = 10;
+  } else if (rand < 85) {
+    reward = "获得50积分 💰";
+    winPoints = 50;
+  } else if (rand < 95) {
+    reward = "获得100积分 🚀";
+    winPoints = 100;
+  } else {
+    reward = "再来一次 🔁";
+  }
+
+  points += winPoints;
+  updatePoints();
+
+  document.getElementById("spinResult").innerHTML =
+    "🎯 抽奖结果：" + reward;
+}
 
       // 模拟 userId（第一版不用登录）
       const userId = "user123";
