@@ -18,7 +18,9 @@
 <button onclick="spin()">开始</button>
 
 <script>
-<script>
+// =====================
+// 🎡 基础初始化
+// =====================
 const canvas = document.getElementById("wheel");
 const ctx = canvas.getContext("2d");
 
@@ -29,28 +31,52 @@ let points = 50;
 let angle = 0;
 let spinning = false;
 
+// =====================
+// 💰 积分更新
+// =====================
 function updatePoints(){
   document.getElementById("points").innerText="💰 当前积分："+points;
 }
 
-// 运势
+// =====================
+// 🔮 运势系统（你原版逻辑恢复）
+// =====================
 function generateLuck(){
-  const score=Math.floor(Math.random()*100);
+
+  const userId="user123";
+  const date=new Date().toISOString().slice(0,10);
+
+  let hash=0;
+  const str=userId+date;
+
+  for(let i=0;i<str.length;i++){
+    hash+=str.charCodeAt(i);
+  }
+
+  const score=hash%100;
+
   let level="",text="";
 
   if(score>=80){
-    level="大吉";text="今天你不成交，客户都觉得遗憾。";
+    level="大吉";
+    text="今天你不成交，客户都觉得遗憾。";
   }else if(score>=50){
-    level="中吉";text="机会有，但你需要主动一点。";
+    level="中吉";
+    text="机会有，但你需要主动一点。";
   }else{
-    level="小凶";text="今天适合铺垫关系。";
+    level="小凶";
+    text="今天适合铺垫关系，不适合成交。";
   }
 
   document.getElementById("result").innerHTML=
-    `🎯 运势分数：${score}<br>🔮 运势等级：${level}<br>💬 ${text}`;
+    `🎯 运势分数：${score}<br>
+     🔮 运势等级：${level}<br>
+     💬 今日提示：${text}`;
 }
 
-// 画转盘
+// =====================
+// 🎡 转盘绘制
+// =====================
 function drawWheel(angleDeg){
   const arc=Math.PI*2/rewards.length;
 
@@ -79,8 +105,11 @@ function drawWheel(angleDeg){
   ctx.restore();
 }
 
-// 抽奖
+// =====================
+// 🎯 抽奖系统（带动画）
+// =====================
 function spin(){
+
   if(spinning) return;
 
   if(points<10){
@@ -93,8 +122,32 @@ function spin(){
 
   spinning=true;
 
-  const index=Math.floor(Math.random()*5);
-  const arc=360/5;
+  const rand=Math.random()*100;
+  let index=0;
+  let reward="";
+  let winPoints=0;
+
+  if(rand<40){
+    index=0;
+    reward="谢谢参与 😢";
+  }else if(rand<70){
+    index=1;
+    reward="10积分 🎉";
+    winPoints=10;
+  }else if(rand<85){
+    index=2;
+    reward="50积分 💰";
+    winPoints=50;
+  }else if(rand<95){
+    index=3;
+    reward="100积分 🚀";
+    winPoints=100;
+  }else{
+    index=4;
+    reward="再来一次 🔁";
+  }
+
+  const arc=360/rewards.length;
   const target=360*5+(360-index*arc-arc/2);
 
   let current=angle;
@@ -108,20 +161,20 @@ function spin(){
       clearInterval(timer);
       spinning=false;
 
-      const rewardsMap=[0,10,50,100,0];
-      points+=rewardsMap[index];
+      points+=winPoints;
       updatePoints();
 
       document.getElementById("spinResult").innerHTML=
-        "🎯 抽奖结果："+rewards[index];
+        "🎯 抽奖结果："+reward;
     }
   },20);
 }
 
+// =====================
 // 初始化
+// =====================
 updatePoints();
 drawWheel(0);
-</script>
 </script>
 
 </body>
