@@ -100,6 +100,7 @@ function generateLuck(){
 // 🎡 转盘绘制
 // =====================
 function drawWheel(angleDeg){
+  if (!Number.isFinite(angleDeg)) angleDeg = 0;
   const arc=Math.PI*2/rewards.length;
 
   ctx.clearRect(0,0,300,300);
