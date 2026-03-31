@@ -50,7 +50,11 @@
   <div id="spinResult" class="result"></div>
 
   <script>
+const canvas = document.getElementById("wheel");
+const ctx = canvas.getContext("2d");
 
+const rewards = ["谢谢参与", "10积分", "50积分", "100积分", "再来一次"];
+const colors = ["#444", "#666", "#888", "#aaa", "#ccc"];
     // =====================
     // 积分系统
     // =====================
@@ -176,7 +180,7 @@ function drawWheel() {
 }
 
 // 初始化绘制
-function drawWheelWithRotation(angleDeg) {
+function drawWheel(angleDeg) {
   const arc = Math.PI * 2 / rewards.length;
 
   ctx.clearRect(0, 0, 300, 300);
@@ -259,7 +263,7 @@ function spin() {
     current += (targetAngle - current) * 0.1;
 
     angle = current;
-    drawWheelWithRotation(angle);
+    drawWheel(angle);
 
     if (Math.abs(targetAngle - current) < 0.5) {
       clearInterval(timer);
