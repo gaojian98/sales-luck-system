@@ -20,5 +20,16 @@ test('mindset routes expose daily practice operations', () => {
   const signatures = listRouteSignatures(router);
   assert.ok(signatures.includes('GET /today'));
   assert.ok(signatures.includes('POST /practice/complete'));
+  assert.ok(signatures.includes('POST /self-eval'));
+  assert.ok(signatures.includes('POST /weekly-assessment'));
+  assert.ok(signatures.includes('GET /weekly-goal'));
+  assert.ok(signatures.includes('POST /weekly-goal'));
+  assert.ok(signatures.includes('POST /psych/fear-identify'));
+  assert.ok(signatures.includes('POST /psych/inferiority-rewrite'));
+  assert.ok(signatures.includes('POST /psych/first-aid'));
+  assert.ok(signatures.includes('GET /psych/history'));
+  assert.ok(signatures.includes('POST /identity/evidence'));
+  assert.ok(signatures.includes('GET /identity/evidence'));
+  assert.ok(signatures.includes('GET /identity/profile'));
   assert.ok(signatures.includes('GET /metrics'));
 });

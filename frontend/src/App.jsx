@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import LotteryWheel from './components/common/LotteryWheel';
 import { chickenSoup } from './data/chickenSoup';
@@ -16,14 +16,135 @@ import bgAxe from './assets/energy/axe.jpg';
 /** 开发环境走 Vite 代理（见 vite.config.js），避免跨域；生产构建仍直连后端端口 */
 const API = import.meta.env.DEV ? '/api' : 'http://127.0.0.1:3001/api';
 /** 首屏可见：用于确认已加载当前前端构建（若看不到请重启 vite 并强制刷新浏览器） */
-const APP_RELEASE_TAG = '信念系统版 UI · 2026-05-11';
+const APP_RELEASE_TAG = '信念系统版 UI · 2026-05-12 · 经济参数可配置';
 const DEFAULT_RECHARGE_PACKAGES = [
   { id: 1, name: '7天能量重启包', amount: '9.9', energy_value: 12 },
   { id: 2, name: '21天信念重塑包', amount: '59.9', energy_value: 88 },
   { id: 3, name: '90天身份升级包', amount: '199', energy_value: 320 }
 ];
 const DEFAULT_LIVE_QA_URL = 'https://www.tiktok.com/live';
+const DEFAULT_PAY_BIND_CHANNELS = [
+  { value: 'wechat', label: '微信' },
+  { value: 'alipay', label: '支付宝' },
+  { value: 'bank_card', label: '银行卡' },
+  { value: 'cold_wallet', label: '冷钱包' }
+];
 const COURSE_SUBJECTS = ['销售学', '性格学', '沟通学', '客户关系管理', '成交策略'];
+
+function payChannelLabel(code, options) {
+  const list = options && options.length > 0 ? options : DEFAULT_PAY_BIND_CHANNELS;
+  const row = list.find((x) => String(x.value) === String(code));
+  return row?.label || code || '--';
+}
+
+/** 空中加油站三步：弹窗文案与引导 */
+const PRACTICE_STEP_UI = {
+  affirmation: {
+    title: '晨间确认',
+    placeholder: '例：今天我选择相信自己的能力，先把一件事做到底。',
+    hint: '用一句话定下今天的自我立场，不必长。'
+  },
+  action: {
+    title: '今日最小行动',
+    placeholder: '例：给一位客户发了跟进消息 / 整理了明天要用的清单。',
+    hint: '写下你今天真正完成的一件小事即可。'
+  },
+  reflection: {
+    title: '晚间复盘',
+    placeholder: '例：今天最有收获的是…… 明天可以微调的一点：……',
+    hint: '一两句收尾，帮大脑「闭合」今天。'
+  }
+};
+
+/** 与后端 identity 等级门槛一致（mindset.service getIdentityProfile） */
+const IDENTITY_LEVEL_TIERS = [
+  { level: 1, name: '萌芽者', minScore: 0, standard: '起步：完成每日三步与最小行动，先让能量与打卡节奏跑起来。' },
+  { level: 2, name: '觉醒者', minScore: 80, standard: '觉察：自我确认提升、恐惧干扰下降，开始稳定留痕成长证据。' },
+  { level: 3, name: '践行者', minScore: 140, standard: '执行：行动稳定指数与证据数量明显上升，可拆解更大周目标。' },
+  { level: 4, name: '进化者', minScore: 200, standard: '跃迁：多维指标均衡，适合挑战高难任务并复盘沉淀方法。' },
+  { level: 5, name: '引领者', minScore: 280, standard: '引领：身份分维持高位，以示范行为带动团队或客户信任。' }
+];
+
+/** 成长轨迹弹窗内：能量余额折线（按时间正序） */
+function EnergyBalanceChart({ series }) {
+  const vbW = 640;
+  const vbH = 172;
+  const padL = 40;
+  const padR = 16;
+  const padT = 20;
+  const padB = 36;
+  const innerW = vbW - padL - padR;
+  const innerH = vbH - padT - padB;
+
+  if (!series || series.length === 0) {
+    return (
+      <div
+        style={{
+          padding: 20,
+          textAlign: 'center',
+          fontSize: 13,
+          color: '#6b4b8b',
+          background: 'rgba(255,255,255,0.5)',
+          borderRadius: 12,
+          border: '1px dashed rgba(123,44,191,0.25)'
+        }}
+      >
+        暂无能量流水，完成充值、抽奖或任务后将在此绘制能量曲线。
+      </div>
+    );
+  }
+
+  const balances = series.map((s) => s.balance);
+  const minB = Math.min(...balances);
+  const maxB = Math.max(...balances);
+  const span = maxB - minB || 1;
+
+  const pts = series.map((s, i) => {
+    const x = padL + (series.length === 1 ? innerW / 2 : (i / (series.length - 1)) * innerW);
+    const yNorm = (s.balance - minB) / span;
+    const y = padT + innerH - yNorm * innerH;
+    return { x, y, balance: s.balance, at: s.at };
+  });
+
+  const lineD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const areaD = `${lineD} L${last.x},${padT + innerH} L${first.x},${padT + innerH} Z`;
+
+  return (
+    <div style={{ width: '100%', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(123,44,191,0.18)' }}>
+      <svg
+        viewBox={`0 0 ${vbW} ${vbH}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="能量值曲线"
+        style={{ width: '100%', height: 160, display: 'block', background: 'linear-gradient(180deg, rgba(255,255,255,0.65), rgba(245,236,255,0.5))' }}
+      >
+        <defs>
+          <linearGradient id="growthEnergyArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(124,58,237,0.28)" />
+            <stop offset="100%" stopColor="rgba(124,58,237,0.02)" />
+          </linearGradient>
+        </defs>
+        <path d={areaD} fill="url(#growthEnergyArea)" stroke="none" />
+        <path
+          d={lineD}
+          fill="none"
+          stroke="#5b21b6"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {pts.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r={3.5} fill="#fff" stroke="#7c3aed" strokeWidth="1.6" />
+        ))}
+        <text x={padL} y={vbH - 10} fontSize="11" fill="#6b4b8b" fontFamily="system-ui, sans-serif">
+          横轴：从早到晚 · 纵轴：能量余额（{minB} → {maxB}）
+        </text>
+      </svg>
+    </div>
+  );
+}
 
 function generateRandomScore() {
   return Math.floor(Math.random() * 81) + 20;
@@ -190,6 +311,22 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [showGrowthModal, setShowGrowthModal] = useState(false);
+  const [showPaymentBindModal, setShowPaymentBindModal] = useState(false);
+  const [paymentBindings, setPaymentBindings] = useState([]);
+  const [payChannelOptions, setPayChannelOptions] = useState(DEFAULT_PAY_BIND_CHANNELS);
+  const [bindChannelType, setBindChannelType] = useState('wechat');
+  const [bindLabel, setBindLabel] = useState('');
+  const [bindAccountMask, setBindAccountMask] = useState('');
+  const [bindAccountRef, setBindAccountRef] = useState('');
+  const [bindExtraNote, setBindExtraNote] = useState('');
+  const [bindSetDefault, setBindSetDefault] = useState(true);
+  const [rechargePayChannel, setRechargePayChannel] = useState('wechat');
+  const [giftToUsername, setGiftToUsername] = useState('');
+  const [giftEnergyAmount, setGiftEnergyAmount] = useState('');
+  const [redeemEnergyAmount, setRedeemEnergyAmount] = useState('');
+  const [redeemBindingId, setRedeemBindingId] = useState('');
+  const [practiceStepModal, setPracticeStepModal] = useState(null);
+  const [practiceStepDraft, setPracticeStepDraft] = useState('');
 
   const dashboardRef = useRef(null);
 
@@ -238,10 +375,37 @@ export default function App() {
   const [wheelResult, setWheelResult] = useState(null);
   const [combo, setCombo] = useState(0);
   const [todaySpinCount, setTodaySpinCount] = useState(0);
-  const [maxSpinCount] = useState(20);
+  const [publicEconomy, setPublicEconomy] = useState({
+    dailyMaxSpin: 20,
+    lotterySpinPointsCost: 22,
+    lotteryEnergyBoostCost: 1
+  });
   const [dailyScore, setDailyScore] = useState(null);
   const [todayPractice, setTodayPractice] = useState(null);
   const [mindsetMetrics, setMindsetMetrics] = useState(null);
+  const [mindsetSuggestions, setMindsetSuggestions] = useState(null);
+  const [weeklyGoal, setWeeklyGoal] = useState(null);
+  const [weeklyGoalTitle, setWeeklyGoalTitle] = useState('');
+  const [weeklyGoalDescription, setWeeklyGoalDescription] = useState('');
+  const [weeklyGoalTasksText, setWeeklyGoalTasksText] = useState('');
+  const [weeklyGoalEvidence, setWeeklyGoalEvidence] = useState('');
+  const [weeklyGoalCompletionRate, setWeeklyGoalCompletionRate] = useState(0);
+  const [fearText, setFearText] = useState('');
+  const [fearTriggerText, setFearTriggerText] = useState('');
+  const [negativeBelief, setNegativeBelief] = useState('');
+  const [distressScore, setDistressScore] = useState(65);
+  const [distressScenario, setDistressScenario] = useState('');
+  const [psychToolResult, setPsychToolResult] = useState(null);
+  const [psychHistory, setPsychHistory] = useState([]);
+  const [identityProfile, setIdentityProfile] = useState(null);
+  const [identityEvidenceRows, setIdentityEvidenceRows] = useState([]);
+  const [identityEvidenceTitle, setIdentityEvidenceTitle] = useState('');
+  const [identityEvidenceContent, setIdentityEvidenceContent] = useState('');
+  const [dailySelfEvalScore, setDailySelfEvalScore] = useState(70);
+  const [dailySelfEvalNote, setDailySelfEvalNote] = useState('');
+  const [weeklyFearScore, setWeeklyFearScore] = useState(60);
+  const [weeklyInferiorityScore, setWeeklyInferiorityScore] = useState(60);
+  const [weeklyAssessmentNote, setWeeklyAssessmentNote] = useState('');
 const energyBgMap = {
   sunny: bgSunny,
   sunrise: bgSunrise,
@@ -429,12 +593,117 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
   async function fetchPublicConfig() {
     try {
       const res = await axios.get(`${API}/public/config`);
-      const nextLiveQaUrl = res?.data?.data?.liveQaUrl;
+      const d = res?.data?.data;
+      const nextLiveQaUrl = d?.liveQaUrl;
       if (typeof nextLiveQaUrl === 'string' && nextLiveQaUrl.trim()) {
         setLiveQaUrl(nextLiveQaUrl.trim());
       }
+      const opts = d?.payChannelOptions;
+      if (Array.isArray(opts) && opts.length > 0) {
+        setPayChannelOptions(opts);
+      }
+      if (d && typeof d === 'object') {
+        setPublicEconomy({
+          dailyMaxSpin: Math.max(1, Math.floor(Number(d.dailyMaxSpin)) || 20),
+          lotterySpinPointsCost: Math.max(1, Math.floor(Number(d.lotterySpinPointsCost)) || 22),
+          lotteryEnergyBoostCost: Math.max(1, Math.floor(Number(d.lotteryEnergyBoostCost)) || 1)
+        });
+      }
     } catch (err) {
       setLiveQaUrl(DEFAULT_LIVE_QA_URL);
+    }
+  }
+
+  async function fetchPaymentBindings(currentToken = token) {
+    if (!currentToken) return [];
+    try {
+      const res = await axios.get(`${API}/payment-bindings`, {
+        headers: {
+          Authorization: `Bearer ${currentToken}`
+        }
+      });
+      if (!res.data.success) return [];
+      const list = Array.isArray(res.data.data) ? res.data.data : [];
+      setPaymentBindings(list);
+      return list;
+    } catch (err) {
+      setPaymentBindings([]);
+      return [];
+    }
+  }
+
+  async function submitPaymentBinding() {
+    if (!token) return;
+    try {
+      const res = await axios.post(
+        `${API}/payment-bindings`,
+        {
+          channelType: bindChannelType,
+          label: bindLabel,
+          accountMask: bindAccountMask,
+          accountRef: bindAccountRef,
+          extraNote: bindExtraNote,
+          setDefault: bindSetDefault
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '保存失败');
+        return;
+      }
+      setPaymentBindings(Array.isArray(res.data.data) ? res.data.data : []);
+      setBindLabel('');
+      setBindAccountMask('');
+      setBindAccountRef('');
+      setBindExtraNote('');
+      setBindSetDefault(true);
+    } catch (err) {
+      alert(err?.response?.data?.message || '保存失败');
+    }
+  }
+
+  async function handleSetDefaultBinding(bindingId) {
+    if (!token) return;
+    try {
+      const res = await axios.patch(
+        `${API}/payment-bindings/${bindingId}/default`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '操作失败');
+        return;
+      }
+      setPaymentBindings(Array.isArray(res.data.data) ? res.data.data : []);
+    } catch (err) {
+      alert(err?.response?.data?.message || '操作失败');
+    }
+  }
+
+  async function handleDeletePaymentBinding(bindingId) {
+    if (!token) return;
+    if (!window.confirm('确定移除该支付方式？')) return;
+    try {
+      const res = await axios.delete(`${API}/payment-bindings/${bindingId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!res.data.success) {
+        alert(res.data.message || '删除失败');
+        return;
+      }
+      setPaymentBindings(Array.isArray(res.data.data) ? res.data.data : []);
+    } catch (err) {
+      alert(err?.response?.data?.message || '删除失败');
     }
   }
 
@@ -447,9 +716,27 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
         }
       });
       if (!res.data.success) return;
-      setTodayPractice(res.data.data?.practice || null);
+      const nextPractice = res.data.data?.practice || null;
+      setTodayPractice(nextPractice);
+      setMindsetSuggestions(res.data.data?.suggestions || null);
+      if (Number(nextPractice?.self_eval_score || 0) > 0) {
+        setDailySelfEvalScore(Number(nextPractice.self_eval_score));
+      }
+      if (typeof nextPractice?.self_eval_note === 'string') {
+        setDailySelfEvalNote(nextPractice.self_eval_note);
+      }
+      if (Number(nextPractice?.weekly_fear_score || 0) > 0) {
+        setWeeklyFearScore(Number(nextPractice.weekly_fear_score));
+      }
+      if (Number(nextPractice?.weekly_inferiority_score || 0) > 0) {
+        setWeeklyInferiorityScore(Number(nextPractice.weekly_inferiority_score));
+      }
+      if (typeof nextPractice?.weekly_assessment_note === 'string') {
+        setWeeklyAssessmentNote(nextPractice.weekly_assessment_note);
+      }
     } catch (err) {
       setTodayPractice(null);
+      setMindsetSuggestions(null);
     }
   }
 
@@ -465,6 +752,72 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
       setMindsetMetrics(res.data.data || null);
     } catch (err) {
       setMindsetMetrics(null);
+    }
+  }
+
+  async function fetchWeeklyGoal(currentToken = token) {
+    if (!currentToken) return;
+    try {
+      const res = await axios.get(`${API}/mindset/weekly-goal`, {
+        headers: {
+          Authorization: `Bearer ${currentToken}`
+        }
+      });
+      if (!res.data.success) return;
+      const row = res.data.data || null;
+      setWeeklyGoal(row);
+      setWeeklyGoalTitle(row?.goal_title || '');
+      setWeeklyGoalDescription(row?.goal_description || '');
+      setWeeklyGoalTasksText(Array.isArray(row?.split_tasks) ? row.split_tasks.join('\n') : '');
+      setWeeklyGoalEvidence(row?.evidence_note || '');
+      setWeeklyGoalCompletionRate(Number(row?.completion_rate || 0));
+    } catch (err) {
+      setWeeklyGoal(null);
+    }
+  }
+
+  async function fetchPsychHistory(currentToken = token) {
+    if (!currentToken) return;
+    try {
+      const res = await axios.get(`${API}/mindset/psych/history?limit=20`, {
+        headers: {
+          Authorization: `Bearer ${currentToken}`
+        }
+      });
+      if (!res.data.success) return;
+      setPsychHistory(Array.isArray(res.data.data) ? res.data.data : []);
+    } catch (err) {
+      setPsychHistory([]);
+    }
+  }
+
+  async function fetchIdentityProfile(currentToken = token) {
+    if (!currentToken) return;
+    try {
+      const res = await axios.get(`${API}/mindset/identity/profile`, {
+        headers: {
+          Authorization: `Bearer ${currentToken}`
+        }
+      });
+      if (!res.data.success) return;
+      setIdentityProfile(res.data.data || null);
+    } catch (err) {
+      setIdentityProfile(null);
+    }
+  }
+
+  async function fetchIdentityEvidence(currentToken = token) {
+    if (!currentToken) return;
+    try {
+      const res = await axios.get(`${API}/mindset/identity/evidence?limit=30`, {
+        headers: {
+          Authorization: `Bearer ${currentToken}`
+        }
+      });
+      if (!res.data.success) return;
+      setIdentityEvidenceRows(Array.isArray(res.data.data) ? res.data.data : []);
+    } catch (err) {
+      setIdentityEvidenceRows([]);
     }
   }
 
@@ -486,6 +839,10 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
       fetchGrowthTrajectory(token);
       fetchMindsetToday(token);
       fetchMindsetMetrics(token);
+      fetchWeeklyGoal(token);
+      fetchPsychHistory(token);
+      fetchIdentityProfile(token);
+      fetchIdentityEvidence(token);
     }
   }, [token]);
 
@@ -550,6 +907,29 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
     setSharePosts([]);
     setTodayPractice(null);
     setMindsetMetrics(null);
+    setMindsetSuggestions(null);
+    setWeeklyGoal(null);
+    setWeeklyGoalTitle('');
+    setWeeklyGoalDescription('');
+    setWeeklyGoalTasksText('');
+    setWeeklyGoalEvidence('');
+    setWeeklyGoalCompletionRate(0);
+    setFearText('');
+    setFearTriggerText('');
+    setNegativeBelief('');
+    setDistressScore(65);
+    setDistressScenario('');
+    setPsychToolResult(null);
+    setPsychHistory([]);
+    setIdentityProfile(null);
+    setIdentityEvidenceRows([]);
+    setIdentityEvidenceTitle('');
+    setIdentityEvidenceContent('');
+    setDailySelfEvalScore(70);
+    setDailySelfEvalNote('');
+    setWeeklyFearScore(60);
+    setWeeklyInferiorityScore(60);
+    setWeeklyAssessmentNote('');
   }
 
   async function handleRegisterSubmit() {
@@ -611,7 +991,7 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
       return;
     }
 
-    if (todaySpinCount >= maxSpinCount) {
+    if (todaySpinCount >= publicEconomy.dailyMaxSpin) {
       alert('今日抽奖次数已用完，请明天再来或先提升运势。');
       return;
     }
@@ -679,7 +1059,7 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
 
       const res = await axios.post(
         `${API}/recharge/create`,
-        { packageId },
+        { packageId, payChannel: rechargePayChannel },
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -760,14 +1140,107 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
     window.open(liveQaUrl, '_blank', 'noopener,noreferrer');
   }
 
-  function openRechargeModal() {
+  async function openRechargeModal() {
     if (!token) {
       alert('请先登录');
       setShowLoginModal(true);
       return;
     }
 
+    const list = await fetchPaymentBindings(token);
+    const def = list.find((b) => Number(b.is_default) === 1);
+    if (def?.channel_type) {
+      setRechargePayChannel(String(def.channel_type));
+    }
     setShowRechargeModal(true);
+  }
+
+  async function openPaymentBindModal() {
+    if (!token) {
+      alert('请先登录');
+      setShowLoginModal(true);
+      return;
+    }
+    await fetchPaymentBindings(token);
+    await fetchWallet(token);
+    setShowPaymentBindModal(true);
+  }
+
+  async function submitGiftEnergy() {
+    if (!token) return;
+    const amt = Math.floor(Number(giftEnergyAmount));
+    if (!giftToUsername.trim()) {
+      alert('请输入对方登录用户名');
+      return;
+    }
+    if (!Number.isFinite(amt) || amt < 1) {
+      alert('请输入有效的能量数量');
+      return;
+    }
+    if (!window.confirm(`确认向 @${giftToUsername.trim()} 赠送 ${amt} 点能量？`)) return;
+    try {
+      const res = await axios.post(
+        `${API}/wallet/energy/gift`,
+        { toUsername: giftToUsername.trim(), amount: amt },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '赠送失败');
+        return;
+      }
+      if (res.data.data?.wallet) setWallet(res.data.data.wallet);
+      setGiftEnergyAmount('');
+      alert('赠送成功');
+    } catch (err) {
+      alert(err?.response?.data?.message || '赠送失败');
+    }
+  }
+
+  async function submitRedeemEnergyCash() {
+    if (!token) return;
+    const amt = Math.floor(Number(redeemEnergyAmount));
+    if (!Number.isFinite(amt) || amt < 1) {
+      alert('请输入要兑换的能量数量');
+      return;
+    }
+    if (!redeemBindingId) {
+      alert('请先选择用于收款的已保存方式，便于运营打款');
+      return;
+    }
+    const epy = Number(wallet?.energyPolicies?.energyPerYuan) || 100;
+    const minE = Number(wallet?.energyPolicies?.minRedeemEnergy) || 100;
+    if (amt < minE) {
+      alert(`单次兑换至少 ${minE} 点能量`);
+      return;
+    }
+    const cash = Math.floor((amt * 100) / epy) / 100;
+    if (!window.confirm(`将扣除 ${amt} 点能量，申请兑换约 ¥${cash.toFixed(2)}（按 ${epy} 能量 = ¥1 折算，以实际审核为准）。提交后请等待人工打款。`)) {
+      return;
+    }
+    try {
+      const res = await axios.post(
+        `${API}/wallet/energy/redeem-cash`,
+        { energyAmount: amt, paymentBindingId: Number(redeemBindingId) },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '提交失败');
+        return;
+      }
+      if (res.data.data?.wallet) setWallet(res.data.data.wallet);
+      setRedeemEnergyAmount('');
+      alert(`已提交申请，单号 #${res.data.data?.redemptionId || '--'}，请等待打款。`);
+    } catch (err) {
+      alert(err?.response?.data?.message || '提交失败');
+    }
   }
 
   function openGrowthModal() {
@@ -778,25 +1251,89 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
     }
     fetchGrowthTrajectory(token);
     fetchMindsetMetrics(token);
+    fetchWeeklyGoal(token);
+    fetchPsychHistory(token);
+    fetchIdentityProfile(token);
+    fetchIdentityEvidence(token);
     setShowGrowthModal(true);
   }
 
-  async function completePracticeStep(step) {
+  async function submitIdentityEvidence() {
     if (!token) {
       setShowLoginModal(true);
       return;
     }
-    const textByStep = {
-      affirmation: '我选择相信自己',
-      action: '我完成了今天的最小行动',
-      reflection: '我完成了今天的复盘'
+    const title = identityEvidenceTitle.trim();
+    const content = identityEvidenceContent.trim();
+    if (!title || !content) {
+      alert('请填写证据标题和证据内容');
+      return;
+    }
+    try {
+      const res = await axios.post(
+        `${API}/mindset/identity/evidence`,
+        {
+          title,
+          content,
+          sourceType: 'manual'
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '保存失败');
+        return;
+      }
+      setIdentityEvidenceTitle('');
+      setIdentityEvidenceContent('');
+      await fetchIdentityEvidence(token);
+      await fetchIdentityProfile(token);
+      alert('成长证据已保存');
+    } catch (err) {
+      alert(err?.response?.data?.message || '保存失败');
+    }
+  }
+
+  function openPracticeStepModal(step) {
+    if (!token) {
+      setShowLoginModal(true);
+      return;
+    }
+    const keyByStep = {
+      affirmation: 'affirmation_text',
+      action: 'action_text',
+      reflection: 'reflection_text'
     };
+    const col = keyByStep[step];
+    const existing = col && todayPractice ? todayPractice[col] : '';
+    setPracticeStepDraft(typeof existing === 'string' ? existing : '');
+    setPracticeStepModal(step);
+  }
+
+  function closePracticeStepModal() {
+    setPracticeStepModal(null);
+    setPracticeStepDraft('');
+  }
+
+  async function completePracticeStep(step, text) {
+    if (!token) {
+      setShowLoginModal(true);
+      return false;
+    }
+    const body = String(text || '').trim().slice(0, 255);
+    if (body.length < 2) {
+      alert('请至少写两个字，记录今天真实的一句话即可。');
+      return false;
+    }
     try {
       const res = await axios.post(
         `${API}/mindset/practice/complete`,
         {
           step,
-          text: textByStep[step] || ''
+          text: body
         },
         {
           headers: {
@@ -806,12 +1343,218 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
       );
       if (!res.data.success) {
         alert(res.data.message || '操作失败');
+        return false;
+      }
+      setTodayPractice(res.data.data?.practice || null);
+      setMindsetSuggestions(res.data.data?.suggestions || null);
+      await fetchMindsetMetrics(token);
+      return true;
+    } catch (err) {
+      alert(err?.response?.data?.message || '操作失败');
+      return false;
+    }
+  }
+
+  async function submitPracticeStepModal() {
+    if (!practiceStepModal) return;
+    const ok = await completePracticeStep(practiceStepModal, practiceStepDraft);
+    if (ok) closePracticeStepModal();
+  }
+
+  async function submitDailySelfEval() {
+    if (!token) {
+      setShowLoginModal(true);
+      return;
+    }
+    try {
+      const res = await axios.post(
+        `${API}/mindset/self-eval`,
+        {
+          score: Number(dailySelfEvalScore || 0),
+          note: dailySelfEvalNote
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '提交每日自评失败');
         return;
       }
       setTodayPractice(res.data.data?.practice || null);
+      setMindsetSuggestions(res.data.data?.suggestions || null);
       await fetchMindsetMetrics(token);
+      alert('每日自评已更新');
     } catch (err) {
-      alert(err?.response?.data?.message || '操作失败');
+      alert(err?.response?.data?.message || '提交每日自评失败');
+    }
+  }
+
+  async function submitWeeklyAssessment() {
+    if (!token) {
+      setShowLoginModal(true);
+      return;
+    }
+    try {
+      const res = await axios.post(
+        `${API}/mindset/weekly-assessment`,
+        {
+          fearScore: Number(weeklyFearScore || 0),
+          inferiorityScore: Number(weeklyInferiorityScore || 0),
+          note: weeklyAssessmentNote
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '提交每周测评失败');
+        return;
+      }
+      setTodayPractice(res.data.data?.practice || null);
+      setMindsetSuggestions(res.data.data?.suggestions || null);
+      await fetchMindsetMetrics(token);
+      alert('每周测评已更新');
+    } catch (err) {
+      alert(err?.response?.data?.message || '提交每周测评失败');
+    }
+  }
+
+  async function submitWeeklyGoal() {
+    if (!token) {
+      setShowLoginModal(true);
+      return;
+    }
+    try {
+      const splitTasks = weeklyGoalTasksText
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const status =
+        Number(weeklyGoalCompletionRate || 0) >= 100
+          ? 'done'
+          : Number(weeklyGoalCompletionRate || 0) > 0
+            ? 'in_progress'
+            : 'pending';
+      const res = await axios.post(
+        `${API}/mindset/weekly-goal`,
+        {
+          goalTitle: weeklyGoalTitle,
+          goalDescription: weeklyGoalDescription,
+          splitTasks,
+          completionRate: Number(weeklyGoalCompletionRate || 0),
+          status,
+          evidenceNote: weeklyGoalEvidence
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '保存周目标失败');
+        return;
+      }
+      const row = res.data.data || null;
+      setWeeklyGoal(row);
+      setWeeklyGoalTitle(row?.goal_title || '');
+      setWeeklyGoalDescription(row?.goal_description || '');
+      setWeeklyGoalTasksText(Array.isArray(row?.split_tasks) ? row.split_tasks.join('\n') : '');
+      setWeeklyGoalEvidence(row?.evidence_note || '');
+      setWeeklyGoalCompletionRate(Number(row?.completion_rate || 0));
+      await fetchMindsetMetrics(token);
+      alert('周目标拆解已保存');
+    } catch (err) {
+      alert(err?.response?.data?.message || '保存周目标失败');
+    }
+  }
+
+  async function runFearIdentify() {
+    if (!token) {
+      setShowLoginModal(true);
+      return;
+    }
+    try {
+      const res = await axios.post(
+        `${API}/mindset/psych/fear-identify`,
+        {
+          fearText,
+          triggerText: fearTriggerText
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '恐惧识别失败');
+        return;
+      }
+      setPsychToolResult({ type: 'fear', data: res.data.data });
+      await fetchPsychHistory(token);
+    } catch (err) {
+      alert(err?.response?.data?.message || '恐惧识别失败');
+    }
+  }
+
+  async function runInferiorityRewrite() {
+    if (!token) {
+      setShowLoginModal(true);
+      return;
+    }
+    try {
+      const res = await axios.post(
+        `${API}/mindset/psych/inferiority-rewrite`,
+        { negativeBelief },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '自卑重构失败');
+        return;
+      }
+      setPsychToolResult({ type: 'rewrite', data: res.data.data });
+      await fetchPsychHistory(token);
+    } catch (err) {
+      alert(err?.response?.data?.message || '自卑重构失败');
+    }
+  }
+
+  async function runEmotionalFirstAid() {
+    if (!token) {
+      setShowLoginModal(true);
+      return;
+    }
+    try {
+      const res = await axios.post(
+        `${API}/mindset/psych/first-aid`,
+        {
+          distressScore: Number(distressScore || 0),
+          scenario: distressScenario
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (!res.data.success) {
+        alert(res.data.message || '情绪急救失败');
+        return;
+      }
+      setPsychToolResult({ type: 'aid', data: res.data.data });
+      await fetchPsychHistory(token);
+    } catch (err) {
+      alert(err?.response?.data?.message || '情绪急救失败');
     }
   }
 
@@ -855,6 +1598,28 @@ const energyBgImage = energyBgMap[currentEnergyScene] || bgSunny;
     energy: `${record.change_amount > 0 ? '+' : ''}${record.change_amount}`,
     source: record.remark || record.source || record.type || '--'
   }));
+  const mindsetCurveRows = Array.isArray(mindsetMetrics?.curve)
+    ? mindsetMetrics.curve.slice(-30)
+    : [];
+  const weeklyAssessmentRows = Array.isArray(mindsetMetrics?.weeklyAssessments)
+    ? mindsetMetrics.weeklyAssessments.slice(-12)
+    : [];
+
+  const energyBalanceChartSeries = useMemo(() => {
+    const slice = energyRecords.slice(0, 56);
+    return [...slice]
+      .reverse()
+      .map((r) => ({
+        balance: Number(r.balance_after),
+        at: r.created_at
+      }))
+      .filter((p) => Number.isFinite(p.balance));
+  }, [energyRecords]);
+
+  const spinPointsCostDisplay =
+    wallet?.lotteryEconomy?.spinPointsCost ?? publicEconomy.lotterySpinPointsCost;
+  const energyBoostCostDisplay =
+    wallet?.lotteryEconomy?.energyBoostCost ?? publicEconomy.lotteryEnergyBoostCost;
 
   function formatRechargeAmount(amount) {
     const n = Number(amount);
@@ -865,12 +1630,12 @@ const centerWheelWrap = {
   top: isMobile ? 'auto' : '50%',
   left: isMobile ? 'auto' : '50%',
   transform: isMobile ? 'none' : 'translate(-50%, -50%)',
-  zIndex: 1,
+  zIndex: 2,
   width: '100%',
   display: 'flex',
   justifyContent: 'center',
   alignItems: 'center',
-  pointerEvents: 'none',
+  pointerEvents: 'auto',
   padding: isMobile ? '6px 0' : '0',
   boxSizing: 'border-box'
 };
@@ -918,6 +1683,7 @@ const centerWheelWrap = {
     color: '#2f1b45',
     outline: 'none'
   };
+  const textInputStyle = inputStyle;
 
   const pageShell = {
     minHeight: '100vh',
@@ -989,7 +1755,19 @@ const centerWheelWrap = {
   const rechargeCard = {
     ...cornerCard,
     right: desktopEdgeOffset,
-    bottom: 10
+    bottom: 10,
+    // 桌面端原为 220px 固定高，三档套餐+副文案会溢出并被 dashboard 裁切；改为自适应 + 上限滚动
+    ...(isMobile
+      ? {}
+      : {
+          height: 'auto',
+          maxHeight: 'min(480px, calc(100dvh - 88px))',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          justifyContent: 'flex-start',
+          WebkitOverflowScrolling: 'touch',
+          boxSizing: 'border-box'
+        })
   };
 
   return (
@@ -1010,7 +1788,7 @@ const centerWheelWrap = {
         }}
       >
         {APP_RELEASE_TAG}
-        <span style={{ opacity: 0.85 }}> · 首屏左上角「空中加油站」含晨间确认三步；充值区有套餐结果说明。无此行请强制刷新或重启 npm run dev</span>
+        <span style={{ opacity: 0.85 }}> · 评估与心理工具：已并入「成长轨迹」弹窗。首屏左上角仅保留三步练习。无此行请重启 npm run dev</span>
       </div>
       <div className="star-layer"></div>
       <div className="cosmic-orbit-bg"></div>
@@ -1078,26 +1856,32 @@ const centerWheelWrap = {
               <div style={{ marginBottom: 6, fontWeight: 'bold', color: '#7b2cbf' }}>
                 连续行动天数：{currentStreakDays}
               </div>
+              <div style={{ marginBottom: 6, color: '#6b21a8', fontSize: 12 }}>
+                今日能量关键词：<strong>{mindsetSuggestions?.energyKeyword || '稳住节奏'}</strong>
+              </div>
+              <div style={{ marginBottom: 8, color: '#6b4b8b', fontSize: 12 }}>
+                {mindsetSuggestions?.cosmicMicroContent || '先完成一个最小行动，你会更相信自己。'}
+              </div>
               <button
-                onClick={() => completePracticeStep('affirmation')}
+                onClick={() => openPracticeStepModal('affirmation')}
                 className="cosmic-btn"
                 style={{ ...ghostBtn, width: '100%', marginBottom: 6, textAlign: 'left', fontSize: 12 }}
               >
-                {affirmationDone ? '✅ 晨间确认已完成' : '⭕ 完成晨间确认'}
+                {affirmationDone ? '✅ 晨间确认已完成 · 点按可改' : '⭕ 晨间确认 — 写一句话'}
               </button>
               <button
-                onClick={() => completePracticeStep('action')}
+                onClick={() => openPracticeStepModal('action')}
                 className="cosmic-btn"
                 style={{ ...ghostBtn, width: '100%', marginBottom: 6, textAlign: 'left', fontSize: 12 }}
               >
-                {actionDone ? '✅ 今日行动已完成' : '⭕ 完成今日最小行动'}
+                {actionDone ? '✅ 今日行动已完成 · 点按可改' : '⭕ 今日最小行动 — 写一件小事'}
               </button>
               <button
-                onClick={() => completePracticeStep('reflection')}
+                onClick={() => openPracticeStepModal('reflection')}
                 className="cosmic-btn"
                 style={{ ...ghostBtn, width: '100%', textAlign: 'left', fontSize: 12 }}
               >
-                {reflectionDone ? '✅ 晚间复盘已完成' : '⭕ 完成晚间复盘'}
+                {reflectionDone ? '✅ 晚间复盘已完成 · 点按可改' : '⭕ 晚间复盘 — 一两句收尾'}
               </button>
             </div>
           </div>
@@ -1116,6 +1900,12 @@ const centerWheelWrap = {
           textAlign: 'right'
         }}
       >
+        <div style={{ textAlign: 'right', marginBottom: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 'bold', color: '#2f1b45' }}>账户中心</div>
+          <div style={{ fontSize: 11, color: '#6b4b8b', marginTop: 2, lineHeight: 1.5 }}>
+            成长轨迹（含评估与记录）入口
+          </div>
+        </div>
         <div
           style={{
             display: 'grid',
@@ -1128,7 +1918,7 @@ const centerWheelWrap = {
             onClick={() => setShowRegisterModal(true)}
             className="cosmic-btn"
             style={{
-              ...primaryBtn,
+              ...ghostBtn,
               padding: '8px 10px',
               fontSize: 13
             }}
@@ -1219,6 +2009,13 @@ const centerWheelWrap = {
             >
               成长轨迹
             </button>
+            <button
+              onClick={openPaymentBindModal}
+              className="cosmic-btn"
+              style={{ ...ghostBtn, width: '100%', marginTop: 6, textAlign: 'right' }}
+            >
+              支付 / 收款与能量（绑定、转赠、兑换）
+            </button>
           </div>
         </div>
       </div>
@@ -1239,6 +2036,23 @@ const centerWheelWrap = {
         {error}
       </div>
     ) : null}
+
+    <div
+      style={{
+        textAlign: 'center',
+        fontSize: 11,
+        color: '#6b4b8b',
+        marginBottom: 6,
+        lineHeight: 1.55,
+        maxWidth: 420,
+        marginLeft: 'auto',
+        marginRight: 'auto'
+      }}
+    >
+      每次转动消耗 <strong>{spinPointsCostDisplay}</strong> 积分；若有足够能量，另扣{' '}
+      <strong>{energyBoostCostDisplay}</strong> 点能量参与加权奖池。每日最多{' '}
+      <strong>{publicEconomy.dailyMaxSpin}</strong> 次（均由后台 business_params 配置）。
+    </div>
 
     <div className="wheel-zone" style={centerWheelWrap}>
       <div className="wheel-wrapper" style={{ pointerEvents: 'auto' }}>
@@ -1500,29 +2314,35 @@ const centerWheelWrap = {
       <div style={{ marginBottom: 6, fontWeight: 'bold', color: '#7b2cbf' }}>
         连续行动天数：{currentStreakDays}
       </div>
+      <div style={{ marginBottom: 6, color: '#6b21a8', fontSize: 13 }}>
+        今日能量关键词：<strong>{mindsetSuggestions?.energyKeyword || '稳住节奏'}</strong>
+      </div>
+      <div style={{ marginBottom: 8, color: '#6b4b8b', fontSize: 12 }}>
+        {mindsetSuggestions?.cosmicMicroContent || '先完成一个最小行动，你会更相信自己。'}
+      </div>
 
       <button
-        onClick={() => completePracticeStep('affirmation')}
+        onClick={() => openPracticeStepModal('affirmation')}
         className="cosmic-btn"
         style={{ ...ghostBtn, width: '100%', textAlign: 'left', fontWeight: 'bold' }}
       >
-        {affirmationDone ? '✅ 晨间确认已完成' : '⭕ 完成晨间确认'}
+        {affirmationDone ? '✅ 晨间确认已完成 · 点按可改' : '⭕ 晨间确认 — 写一句话'}
       </button>
 
       <button
-        onClick={() => completePracticeStep('action')}
+        onClick={() => openPracticeStepModal('action')}
         className="cosmic-btn"
         style={{ ...ghostBtn, width: '100%', textAlign: 'left', fontWeight: 'bold' }}
       >
-        {actionDone ? '✅ 今日行动已完成' : '⭕ 完成今日最小行动'}
+        {actionDone ? '✅ 今日行动已完成 · 点按可改' : '⭕ 今日最小行动 — 写一件小事'}
       </button>
 
       <button
-        onClick={() => completePracticeStep('reflection')}
+        onClick={() => openPracticeStepModal('reflection')}
         className="cosmic-btn"
         style={{ ...ghostBtn, width: '100%', textAlign: 'left', fontWeight: 'bold' }}
       >
-        {reflectionDone ? '✅ 晚间复盘已完成' : '⭕ 完成晚间复盘'}
+        {reflectionDone ? '✅ 晚间复盘已完成 · 点按可改' : '⭕ 晚间复盘 — 一两句收尾'}
       </button>
     </div>
   </div>
@@ -1656,6 +2476,12 @@ const centerWheelWrap = {
     lineHeight: 1.6
   }}
 >
+  <div style={{ textAlign: 'right', marginBottom: 10 }}>
+    <div style={{ fontSize: 15, fontWeight: 'bold', color: '#2f1b45' }}>账户中心</div>
+    <div style={{ fontSize: 11, color: '#6b4b8b', marginTop: 2, lineHeight: 1.5 }}>
+      能量余额 · 成长轨迹（含评估、记录与工具）
+    </div>
+  </div>
 
   <div
     style={{
@@ -1669,7 +2495,7 @@ const centerWheelWrap = {
       onClick={() => setShowRegisterModal(true)}
       className="cosmic-btn"
       style={{
-        ...primaryBtn,
+        ...ghostBtn,
         padding: '8px 10px',
         fontSize: 13
       }}
@@ -1752,6 +2578,13 @@ const centerWheelWrap = {
     style={{ ...primaryBtn, width: '100%', marginTop: 10 }}
   >
     成长轨迹
+  </button>
+  <button
+    onClick={openPaymentBindModal}
+    className="cosmic-btn"
+    style={{ ...ghostBtn, width: '100%', marginTop: 6, textAlign: 'right' }}
+  >
+    支付 / 收款与能量（绑定、转赠、兑换）
   </button>
 </div>                
 </div>
@@ -1859,6 +2692,23 @@ const centerWheelWrap = {
                   </div>
                 
                 ) : null}
+
+                <div
+                  style={{
+                    textAlign: 'center',
+                    fontSize: 12,
+                    color: '#6b4b8b',
+                    marginBottom: 8,
+                    lineHeight: 1.55,
+                    maxWidth: 520,
+                    marginLeft: 'auto',
+                    marginRight: 'auto'
+                  }}
+                >
+                  每次转动消耗 <strong>{spinPointsCostDisplay}</strong> 积分；若有足够能量，另扣{' '}
+                  <strong>{energyBoostCostDisplay}</strong> 点能量参与加权奖池。每日最多{' '}
+                  <strong>{publicEconomy.dailyMaxSpin}</strong> 次（均由后台 business_params 配置）。
+                </div>
 
                 <div className="wheel-zone" style={centerWheelWrap}>
                   <div className="wheel-wrapper" style={{ pointerEvents: 'auto' }}>
@@ -2302,7 +3152,7 @@ const centerWheelWrap = {
               <div
                 className="glass-panel"
                 style={{
-                  width: 860,
+                  width: 920,
                   maxWidth: '96vw',
                   maxHeight: '88vh',
                   overflowY: 'auto',
@@ -2315,7 +3165,294 @@ const centerWheelWrap = {
                 }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <h2 className="panel-title" style={{ marginTop: 0, marginBottom: 16 }}>成长轨迹</h2>
+                <h2 className="panel-title" style={{ marginTop: 0, marginBottom: 6 }}>成长轨迹</h2>
+                <p style={{ fontSize: 12, color: '#6b4b8b', lineHeight: 1.65, marginTop: 0, marginBottom: 18 }}>
+                  成长记录（能量曲线、徽章、进阶标准）与成长评估、心理工具均在本页完成；下方仍可查看明细数据与证据墙。
+                </p>
+
+                <h3 style={{ margin: '0 0 10px', color: '#4b2a67', fontSize: 16 }}>成长记录</h3>
+                <div
+                  style={{
+                    marginBottom: 20,
+                    padding: 14,
+                    borderRadius: 14,
+                    border: '1px solid rgba(123,44,191,0.2)',
+                    background: 'rgba(255,255,255,0.55)'
+                  }}
+                >
+                  <div style={{ fontWeight: 'bold', color: '#5b21b6', marginBottom: 8, fontSize: 13 }}>能量值曲线</div>
+                  <EnergyBalanceChart series={energyBalanceChartSeries} />
+                  <div style={{ fontSize: 12, color: '#4b2a67', marginTop: 10, marginBottom: 14 }}>
+                    当前能量余额：
+                    <strong>{wallet != null ? wallet.energy_balance : '--'}</strong>
+                    <span style={{ opacity: 0.75, marginLeft: 8 }}>（曲线按流水时间正序）</span>
+                  </div>
+
+                  <div style={{ fontWeight: 'bold', color: '#5b21b6', marginBottom: 10, fontSize: 13 }}>进阶徽章</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                    {(identityProfile?.badges || []).length === 0 ? (
+                      <span style={{ fontSize: 12, color: '#6b4b8b' }}>暂无徽章数据，完成周目标与练习后将逐步解锁。</span>
+                    ) : (
+                      (identityProfile?.badges || []).map((b) => (
+                        <div
+                          key={b.key || b.title}
+                          style={{
+                            width: 86,
+                            minHeight: 86,
+                            borderRadius: 999,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            textAlign: 'center',
+                            padding: '8px 6px',
+                            boxSizing: 'border-box',
+                            border: b.unlocked ? '2px solid rgba(212,175,55,0.65)' : '2px solid rgba(107,75,139,0.25)',
+                            background: b.unlocked
+                              ? 'linear-gradient(145deg, rgba(254,243,199,0.95), rgba(196,181,253,0.88), rgba(123,44,191,0.85))'
+                              : 'linear-gradient(180deg, rgba(245,245,250,0.9), rgba(220,220,230,0.55))',
+                            boxShadow: b.unlocked ? '0 6px 18px rgba(123,44,191,0.22)' : 'none',
+                            color: b.unlocked ? '#3b0764' : '#8878a8'
+                          }}
+                        >
+                          <span style={{ fontSize: 20, lineHeight: 1 }}>{b.unlocked ? '✦' : '◇'}</span>
+                          <span style={{ fontSize: 10, fontWeight: 'bold', marginTop: 4, lineHeight: 1.25 }}>{b.title}</span>
+                          {b.unlocked && b.unlockedAt ? (
+                            <span style={{ fontSize: 9, opacity: 0.85, marginTop: 2 }}>
+                              {new Date(b.unlockedAt).toLocaleDateString()}
+                            </span>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div style={{ fontWeight: 'bold', color: '#5b21b6', marginBottom: 8, fontSize: 13 }}>进阶标准（身份等级）</div>
+                  <div style={{ fontSize: 11, color: '#6b4b8b', marginBottom: 8, lineHeight: 1.55 }}>
+                    身份分由连续行动、心理指标与成长证据等综合计算；达到对应分数进入下一阶。
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>等级</th>
+                        <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>门槛分</th>
+                        <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>进阶标准</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {IDENTITY_LEVEL_TIERS.map((tier) => {
+                        const active = Number(identityProfile?.level ?? 1) === tier.level;
+                        return (
+                          <tr
+                            key={tier.level}
+                            style={{
+                              background: active ? 'rgba(124,58,237,0.12)' : 'transparent'
+                            }}
+                          >
+                            <td style={{ padding: '8px 4px', fontWeight: active ? 'bold' : 'normal' }}>
+                              Lv.{tier.level} {tier.name}
+                              {active ? ' · 当前' : ''}
+                            </td>
+                            <td style={{ padding: '8px 4px' }}>≥ {tier.minScore}</td>
+                            <td style={{ padding: '8px 4px', color: '#4b2a67', lineHeight: 1.5 }}>{tier.standard}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  <div style={{ fontWeight: 'bold', color: '#5b21b6', marginBottom: 6, fontSize: 13 }}>最近能量变动</div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '4px' }}>时间</th>
+                        <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '4px' }}>变动</th>
+                        <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '4px' }}>来源</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {energyCurveRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} style={{ padding: '6px 4px', opacity: 0.7 }}>
+                            暂无
+                          </td>
+                        </tr>
+                      ) : (
+                        energyCurveRows.slice(0, 5).map((row) => (
+                          <tr key={row.id}>
+                            <td style={{ padding: '4px' }}>{row.time}</td>
+                            <td style={{ padding: '4px' }}>{row.energy}</td>
+                            <td style={{ padding: '4px' }}>{row.source}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <h3 style={{ margin: '0 0 10px', color: '#4b2a67', fontSize: 16 }}>成长评估与心理工具</h3>
+                <div
+                  style={{
+                    marginBottom: 20,
+                    padding: 14,
+                    borderRadius: 14,
+                    border: '1px solid rgba(123,44,191,0.2)',
+                    background: 'rgba(255,255,255,0.5)'
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: '#6b4b8b', marginBottom: 14, lineHeight: 1.6 }}>
+                    每日自评、每周测评、周目标拆解与心理赋能工具；首屏「空中加油站」仍保留晨间三步轻打卡。
+                  </div>
+
+                  <div style={{ fontWeight: 'bold', color: '#6b21a8', marginBottom: 8 }}>每日自评（1-100）</div>
+                  <input
+                    value={dailySelfEvalScore}
+                    onChange={(e) => setDailySelfEvalScore(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 8 }}
+                    placeholder="例如 78"
+                  />
+                  <textarea
+                    value={dailySelfEvalNote}
+                    onChange={(e) => setDailySelfEvalNote(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', minHeight: 56, marginBottom: 8, resize: 'vertical' }}
+                    placeholder="可选：今天最值得肯定的一点"
+                  />
+                  <button onClick={submitDailySelfEval} className="cosmic-btn" style={{ ...primaryBtn, width: '100%', marginBottom: 16 }}>
+                    提交每日自评
+                  </button>
+
+                  <div style={{ fontWeight: 'bold', color: '#6b21a8', marginBottom: 8 }}>每周测评（恐惧 / 自卑）</div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <input
+                      value={weeklyFearScore}
+                      onChange={(e) => setWeeklyFearScore(e.target.value)}
+                      style={{ ...inputStyle, width: '50%' }}
+                      placeholder="恐惧分"
+                    />
+                    <input
+                      value={weeklyInferiorityScore}
+                      onChange={(e) => setWeeklyInferiorityScore(e.target.value)}
+                      style={{ ...inputStyle, width: '50%' }}
+                      placeholder="自卑分"
+                    />
+                  </div>
+                  <textarea
+                    value={weeklyAssessmentNote}
+                    onChange={(e) => setWeeklyAssessmentNote(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', minHeight: 56, marginBottom: 8, resize: 'vertical' }}
+                    placeholder="可选：本周内耗主要来自哪里"
+                  />
+                  <button onClick={submitWeeklyAssessment} className="cosmic-btn" style={{ ...primaryBtn, width: '100%', marginBottom: 16 }}>
+                    提交每周测评
+                  </button>
+
+                  <div style={{ fontWeight: 'bold', color: '#6b21a8', marginBottom: 8 }}>周目标拆解</div>
+                  <input
+                    value={weeklyGoalTitle}
+                    onChange={(e) => setWeeklyGoalTitle(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 8 }}
+                    placeholder="本周目标标题"
+                  />
+                  <textarea
+                    value={weeklyGoalDescription}
+                    onChange={(e) => setWeeklyGoalDescription(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', minHeight: 48, marginBottom: 8, resize: 'vertical' }}
+                    placeholder="目标说明（可选）"
+                  />
+                  <textarea
+                    value={weeklyGoalTasksText}
+                    onChange={(e) => setWeeklyGoalTasksText(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', minHeight: 80, marginBottom: 8, resize: 'vertical' }}
+                    placeholder={'任务拆解（每行一条）'}
+                  />
+                  <input
+                    value={weeklyGoalCompletionRate}
+                    onChange={(e) => setWeeklyGoalCompletionRate(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 8 }}
+                    placeholder="完成率 0-100"
+                  />
+                  <input
+                    value={weeklyGoalEvidence}
+                    onChange={(e) => setWeeklyGoalEvidence(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
+                    placeholder="成长证据（可选）"
+                  />
+                  <button onClick={submitWeeklyGoal} className="cosmic-btn" style={{ ...primaryBtn, width: '100%', marginBottom: 8 }}>
+                    保存周目标拆解
+                  </button>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      marginBottom: 4,
+                      borderTop: '1px dashed rgba(123,44,191,0.22)',
+                      paddingTop: 14
+                    }}
+                  >
+                    <div style={{ fontWeight: 'bold', color: '#6b21a8', marginBottom: 8 }}>心理赋能工具</div>
+                    <input
+                      value={fearText}
+                      onChange={(e) => setFearText(e.target.value)}
+                      style={{ ...inputStyle, width: '100%', marginBottom: 8 }}
+                      placeholder="我在怕什么？"
+                    />
+                    <input
+                      value={fearTriggerText}
+                      onChange={(e) => setFearTriggerText(e.target.value)}
+                      style={{ ...inputStyle, width: '100%', marginBottom: 8 }}
+                      placeholder="触发场景（可空）"
+                    />
+                    <button onClick={runFearIdentify} className="cosmic-btn" style={{ ...ghostBtn, width: '100%', textAlign: 'left', marginBottom: 8 }}>
+                      恐惧识别问答
+                    </button>
+                    <input
+                      value={negativeBelief}
+                      onChange={(e) => setNegativeBelief(e.target.value)}
+                      style={{ ...inputStyle, width: '100%', marginBottom: 8 }}
+                      placeholder="输入自我否定信念（例如：我不配成功）"
+                    />
+                    <button onClick={runInferiorityRewrite} className="cosmic-btn" style={{ ...ghostBtn, width: '100%', textAlign: 'left', marginBottom: 8 }}>
+                      自卑重构脚本
+                    </button>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <input
+                        value={distressScore}
+                        onChange={(e) => setDistressScore(e.target.value)}
+                        style={{ ...inputStyle, width: '35%' }}
+                        placeholder="情绪强度"
+                      />
+                      <input
+                        value={distressScenario}
+                        onChange={(e) => setDistressScenario(e.target.value)}
+                        style={{ ...inputStyle, width: '65%' }}
+                        placeholder="当前场景"
+                      />
+                    </div>
+                    <button onClick={runEmotionalFirstAid} className="cosmic-btn" style={{ ...ghostBtn, width: '100%', textAlign: 'left', marginBottom: 8 }}>
+                      情绪急救（3分钟）
+                    </button>
+                    {psychToolResult && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: '#4b2a67', lineHeight: 1.6 }}>
+                        <strong>工具输出：</strong>
+                        <div>{JSON.stringify(psychToolResult.data)}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    margin: '18px 0 14px',
+                    paddingTop: 12,
+                    borderTop: '2px solid rgba(123,44,191,0.15)',
+                    fontWeight: 'bold',
+                    color: '#5b21b6',
+                    fontSize: 14
+                  }}
+                >
+                  数据与明细
+                </div>
+
                 <div
                   style={{
                     marginBottom: 16,
@@ -2328,13 +3465,202 @@ const centerWheelWrap = {
                     lineHeight: 1.8
                   }}
                 >
+                  <div style={{ fontWeight: 'bold', marginBottom: 6, color: '#5b21b6' }}>今日心理指标快照</div>
                   <div>连续行动天数：<strong>{currentStreakDays}</strong></div>
                   <div>自我确认指数：<strong>{mindsetMetrics?.latest?.self_confirmation_score ?? '--'}</strong></div>
                   <div>行动稳定指数：<strong>{mindsetMetrics?.latest?.action_consistency_index ?? '--'}</strong></div>
                   <div>恐惧干扰指数：<strong>{mindsetMetrics?.latest?.fear_interference_index ?? '--'}</strong></div>
+                  <div>每日自评均值：<strong>{mindsetMetrics?.selfEvalAvg ?? '--'}</strong></div>
+                </div>
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: 12,
+                    borderRadius: 12,
+                    border: '1px solid rgba(123,44,191,0.16)',
+                    background: 'rgba(255,255,255,0.45)',
+                    color: '#4b2a67',
+                    fontSize: 13,
+                    lineHeight: 1.8
+                  }}
+                >
+                  <div style={{ fontWeight: 'bold' }}>本周目标：{weeklyGoal?.goal_title || '--'}</div>
+                  <div>完成率：<strong>{weeklyGoal?.completion_rate ?? 0}%</strong></div>
+                  <div>状态：{weeklyGoal?.status || 'pending'}</div>
+                  {Array.isArray(weeklyGoal?.split_tasks) && weeklyGoal.split_tasks.length > 0 && (
+                    <div>拆解任务：{weeklyGoal.split_tasks.join(' / ')}</div>
+                  )}
+                  {weeklyGoal?.evidence_note && <div>成长证据：{weeklyGoal.evidence_note}</div>}
                 </div>
 
-                <h3 style={{ margin: '10px 0', color: '#4b2a67' }}>能量曲线条</h3>
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: 12,
+                    borderRadius: 12,
+                    border: '1px solid rgba(123,44,191,0.16)',
+                    background: 'rgba(255,255,255,0.45)',
+                    color: '#4b2a67',
+                    fontSize: 13,
+                    lineHeight: 1.8
+                  }}
+                >
+                  <div style={{ fontWeight: 'bold' }}>
+                    身份等级：Lv.{identityProfile?.level ?? 1} {identityProfile?.levelName || '萌芽者'}
+                  </div>
+                  <div>身份分：<strong>{identityProfile?.levelScore ?? '--'}</strong></div>
+                  <div>
+                    下一等级：{identityProfile?.nextLevel
+                      ? `Lv.${identityProfile.nextLevel.level} ${identityProfile.nextLevel.name}（需 ${identityProfile.nextLevel.needScore} 分）`
+                      : '已达到最高等级'}
+                  </div>
+                  <div>
+                    徽章进度：
+                    {(identityProfile?.badges || []).map((b) => `${b.unlocked ? '✅' : '⬜'}${b.title}`).join(' / ') || '--'}
+                  </div>
+                  <div style={{ marginTop: 4, opacity: 0.86 }}>
+                    徽章领取记录：
+                    {(identityProfile?.badges || [])
+                      .filter((b) => b.unlocked && b.unlockedAt)
+                      .map((b) => `${b.title}（${new Date(b.unlockedAt).toLocaleDateString()} / ${b.sourceType || 'system'}）`)
+                      .join(' / ') || '暂无'}
+                  </div>
+                  <div>证据墙条目：<strong>{identityProfile?.evidenceCount ?? 0}</strong></div>
+                </div>
+
+                <h3 style={{ margin: '10px 0', color: '#4b2a67' }}>成长证据墙</h3>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: windowWidth <= 760 ? '1fr' : '1fr 1fr',
+                    gap: 10,
+                    marginBottom: 12
+                  }}
+                >
+                  <input
+                    value={identityEvidenceTitle}
+                    onChange={(e) => setIdentityEvidenceTitle(e.target.value)}
+                    placeholder="证据标题（例如：我主动完成一次关键沟通）"
+                    style={{ ...textInputStyle, minHeight: 40 }}
+                  />
+                  <input
+                    value={identityEvidenceContent}
+                    onChange={(e) => setIdentityEvidenceContent(e.target.value)}
+                    placeholder="证据内容（发生了什么变化）"
+                    style={{ ...textInputStyle, minHeight: 40 }}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                  <button className="cosmic-btn" style={primaryBtn} onClick={submitIdentityEvidence}>
+                    新增成长证据
+                  </button>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>时间</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>标题</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>内容</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>阶段</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>来源</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {identityEvidenceRows.length === 0 ? (
+                      <tr><td colSpan={5} style={{ padding: '8px 4px', opacity: 0.7 }}>暂无成长证据</td></tr>
+                    ) : identityEvidenceRows.slice(0, 30).map((row) => (
+                      <tr key={String(row.id)}>
+                        <td style={{ padding: '6px 4px' }}>
+                          {row.created_at ? new Date(row.created_at).toLocaleString() : (row.evidence_date || '--')}
+                        </td>
+                        <td style={{ padding: '6px 4px' }}>{row.title || '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.content || '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.phase_label || '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.source_type || '--'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <h3 style={{ margin: '10px 0', color: '#4b2a67' }}>成长核心曲线（确认感 / 行动稳定 / 恐惧干扰）</h3>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>日期</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>自我确认</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>行动稳定</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>恐惧干扰</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>当日自评</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mindsetCurveRows.length === 0 ? (
+                      <tr><td colSpan={5} style={{ padding: '8px 4px', opacity: 0.7 }}>暂无曲线数据</td></tr>
+                    ) : mindsetCurveRows.map((row) => (
+                      <tr key={String(row.practice_date)}>
+                        <td style={{ padding: '6px 4px' }}>{row.practice_date || '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.self_confirmation_score ?? '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.action_consistency_index ?? '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.fear_interference_index ?? '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{Number(row.self_eval_score || 0) > 0 ? row.self_eval_score : '--'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <h3 style={{ margin: '10px 0', color: '#4b2a67' }}>每周测评（恐惧/自卑）</h3>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>日期</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>恐惧分</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>自卑分</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>干扰均值</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weeklyAssessmentRows.length === 0 ? (
+                      <tr><td colSpan={4} style={{ padding: '8px 4px', opacity: 0.7 }}>暂无每周测评数据</td></tr>
+                    ) : weeklyAssessmentRows.map((row) => (
+                      <tr key={String(row.practice_date) + '-weekly'}>
+                        <td style={{ padding: '6px 4px' }}>{row.practice_date || '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.fearScore ?? '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.inferiorityScore ?? '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.interferenceAvg ?? '--'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <h3 style={{ margin: '10px 0', color: '#4b2a67' }}>心理赋能记录</h3>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>时间</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>工具</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>输入</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid rgba(75,42,103,0.2)', padding: '6px 4px' }}>强度变化</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {psychHistory.length === 0 ? (
+                      <tr><td colSpan={4} style={{ padding: '8px 4px', opacity: 0.7 }}>暂无心理赋能记录</td></tr>
+                    ) : psychHistory.slice(0, 20).map((row) => (
+                      <tr key={row.id}>
+                        <td style={{ padding: '6px 4px' }}>{row.created_at ? new Date(row.created_at).toLocaleString() : '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.tool_type || '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>{row.input_text || '--'}</td>
+                        <td style={{ padding: '6px 4px' }}>
+                          {row.distress_before != null && row.distress_after != null
+                            ? `${row.distress_before} → ${row.distress_after}`
+                            : '--'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <h3 style={{ margin: '10px 0', color: '#4b2a67' }}>能量流水（明细）</h3>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
                   <thead>
                     <tr>
@@ -2413,6 +3739,70 @@ const centerWheelWrap = {
             </div>
           )}
 
+          {practiceStepModal && PRACTICE_STEP_UI[practiceStepModal] && (
+            <div
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.40)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000
+              }}
+              onClick={closePracticeStepModal}
+            >
+              <div
+                className="glass-panel"
+                style={{
+                  width: 420,
+                  maxWidth: '92vw',
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.88), rgba(245,236,255,0.82))',
+                  color: '#2f1b45',
+                  borderRadius: 18,
+                  padding: 24,
+                  boxShadow: '0 20px 50px rgba(80,42,120,0.18)',
+                  border: '1px solid rgba(255,255,255,0.35)'
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2 className="panel-title" style={{ marginTop: 0 }}>
+                  {PRACTICE_STEP_UI[practiceStepModal].title}
+                </h2>
+                <p style={{ fontSize: 12, color: '#6b4b8b', lineHeight: 1.6, marginTop: 0 }}>
+                  {PRACTICE_STEP_UI[practiceStepModal].hint}
+                </p>
+                <textarea
+                  value={practiceStepDraft}
+                  onChange={(e) => setPracticeStepDraft(e.target.value.slice(0, 255))}
+                  placeholder={PRACTICE_STEP_UI[practiceStepModal].placeholder}
+                  style={{
+                    ...inputStyle,
+                    width: '100%',
+                    minHeight: 96,
+                    resize: 'vertical',
+                    marginTop: 8,
+                    marginBottom: 6,
+                    fontFamily: 'inherit'
+                  }}
+                  maxLength={255}
+                  rows={4}
+                />
+                <div style={{ fontSize: 11, color: '#6b4b8b', textAlign: 'right', marginBottom: 14 }}>
+                  {practiceStepDraft.length} / 255
+                </div>
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={closePracticeStepModal} className="cosmic-btn" style={ghostBtn}>
+                    取消
+                  </button>
+                  <button type="button" onClick={submitPracticeStepModal} className="cosmic-btn" style={primaryBtn}>
+                    保存并完成
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {showRechargeModal && (
             <div
               style={{
@@ -2442,6 +3832,23 @@ const centerWheelWrap = {
               >
                 <h2 className="panel-title" style={{ marginTop: 0 }}>快速补能量</h2>
 
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, color: '#6b4b8b', marginBottom: 6, lineHeight: 1.5 }}>
+                    本次充值记账通道（与后台对账一致；实际付款仍走您线下约定流程）
+                  </div>
+                  <select
+                    value={rechargePayChannel}
+                    onChange={(e) => setRechargePayChannel(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
+                  >
+                    {payChannelOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {displayedRechargePackages.map((pkg, idx) => (
                     <button
@@ -2465,6 +3872,245 @@ const centerWheelWrap = {
                 >
                   <button onClick={() => setShowRechargeModal(false)} className="cosmic-btn" style={ghostBtn}>
                     取消
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showPaymentBindModal && (
+            <div
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.40)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 999
+              }}
+              onClick={() => setShowPaymentBindModal(false)}
+            >
+              <div
+                className="glass-panel"
+                style={{
+                  width: 460,
+                  maxWidth: '94vw',
+                  maxHeight: '90vh',
+                  overflowY: 'auto',
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.88), rgba(245,236,255,0.82))',
+                  color: '#2f1b45',
+                  borderRadius: 18,
+                  padding: 24,
+                  boxShadow: '0 20px 50px rgba(80,42,120,0.18)',
+                  border: '1px solid rgba(255,255,255,0.35)'
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2 className="panel-title" style={{ marginTop: 0 }}>支付方式与能量</h2>
+                <p style={{ fontSize: 12, color: '#6b4b8b', lineHeight: 1.6, marginTop: 0 }}>
+                  用于记录您常用的付款渠道（脱敏即可：如微信昵称尾字、卡号后四位、钱包地址前后片段）。请勿填写完整卡号、支付密码或助记词。
+                </p>
+
+                <div
+                  style={{
+                    marginBottom: 18,
+                    padding: 12,
+                    borderRadius: 12,
+                    border: '1px solid rgba(123,44,191,0.2)',
+                    background: 'rgba(255,255,255,0.52)'
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 'bold', color: '#5b21b6', marginBottom: 6 }}>能量转赠 · 兑换现金</div>
+                  <p style={{ fontSize: 11, color: '#6b4b8b', lineHeight: 1.55, marginTop: 0, marginBottom: 10 }}>
+                    当前能量：<strong>{wallet != null ? wallet.energy_balance : '--'}</strong>。转赠与兑换都会消耗能量并记入流水。
+                    <span style={{ display: 'block', marginTop: 6 }}>
+                      为何默认「送能量」而非送积分：能量对应付费与成长加成，转赠更有「礼物感」且不易造成免费积分通胀；积分仍建议通过任务/转盘闭环获取。
+                    </span>
+                  </p>
+                  <div style={{ fontSize: 12, fontWeight: 'bold', color: '#4b2a67', marginBottom: 6 }}>赠送给朋友（对方登录用户名）</div>
+                  <input
+                    value={giftToUsername}
+                    onChange={(e) => setGiftToUsername(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 8 }}
+                    placeholder="对方用户名（与登录账号一致）"
+                  />
+                  <input
+                    value={giftEnergyAmount}
+                    onChange={(e) => setGiftEnergyAmount(e.target.value.replace(/[^\d]/g, ''))}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 8 }}
+                    placeholder={`能量数量（单次最多 ${wallet?.energyPolicies?.maxGiftPerTx ?? 5000}）`}
+                  />
+                  <button type="button" onClick={submitGiftEnergy} className="cosmic-btn" style={{ ...primaryBtn, width: '100%', marginBottom: 14 }}>
+                    确认赠送能量
+                  </button>
+
+                  <div style={{ fontSize: 12, fontWeight: 'bold', color: '#4b2a67', marginBottom: 6 }}>能量兑换现金（人工打款）</div>
+                  <p style={{ fontSize: 11, color: '#6b4b8b', marginTop: 0, marginBottom: 8, lineHeight: 1.5 }}>
+                    汇率（可后台调整）：约 <strong>{wallet?.energyPolicies?.energyPerYuan ?? 100}</strong> 点能量 = ¥1；单次至少{' '}
+                    <strong>{wallet?.energyPolicies?.minRedeemEnergy ?? 100}</strong> 点。提交后为「待打款」状态，运营按下方所选收款方式线下转账。
+                  </p>
+                  <input
+                    value={redeemEnergyAmount}
+                    onChange={(e) => setRedeemEnergyAmount(e.target.value.replace(/[^\d]/g, ''))}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 8 }}
+                    placeholder="要兑换的能量数量"
+                  />
+                  <select
+                    value={redeemBindingId}
+                    onChange={(e) => setRedeemBindingId(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 8, cursor: 'pointer' }}
+                  >
+                    <option value="">请选择收款方式（必选）</option>
+                    {paymentBindings.map((b) => (
+                      <option key={b.id} value={String(b.id)}>
+                        {payChannelLabel(b.channel_type, payChannelOptions)} · {b.label || '未命名'} · {b.account_mask}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 11, color: '#4b2a67', marginBottom: 8 }}>
+                    预计到账约：¥
+                    {(() => {
+                      const epy = Number(wallet?.energyPolicies?.energyPerYuan) || 100;
+                      const n = Math.floor(Number(redeemEnergyAmount) || 0);
+                      return (Math.floor((n * 100) / epy) / 100).toFixed(2);
+                    })()}
+                  </div>
+                  <button type="button" onClick={submitRedeemEnergyCash} className="cosmic-btn" style={{ ...ghostBtn, width: '100%' }}>
+                    提交兑换申请
+                  </button>
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 8 }}>已保存</div>
+                  {paymentBindings.length === 0 ? (
+                    <div style={{ fontSize: 12, color: '#6b4b8b' }}>暂无，请在下方添加。</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {paymentBindings.map((b) => (
+                        <div
+                          key={b.id}
+                          style={{
+                            border: '1px solid rgba(123,44,191,0.2)',
+                            borderRadius: 12,
+                            padding: '10px 12px',
+                            background: 'rgba(255,255,255,0.5)',
+                            fontSize: 13,
+                            lineHeight: 1.5
+                          }}
+                        >
+                          <div style={{ fontWeight: 'bold' }}>
+                            {payChannelLabel(b.channel_type, payChannelOptions)}
+                            {Number(b.is_default) === 1 ? (
+                              <span style={{ marginLeft: 8, fontSize: 11, color: '#7b2cbf' }}>默认</span>
+                            ) : null}
+                          </div>
+                          <div style={{ color: '#4b2a67' }}>
+                            {b.label ? `${b.label} · ` : ''}
+                            {b.account_mask || '--'}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            {Number(b.is_default) !== 1 ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSetDefaultBinding(b.id)}
+                                className="cosmic-btn"
+                                style={{ ...ghostBtn, padding: '6px 12px', fontSize: 12 }}
+                              >
+                                设为默认
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePaymentBinding(b.id)}
+                              className="cosmic-btn"
+                              style={{ ...ghostBtn, padding: '6px 12px', fontSize: 12 }}
+                            >
+                              移除
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    borderTop: '1px solid rgba(123,44,191,0.12)',
+                    paddingTop: 14
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 10 }}>添加</div>
+                  <label style={{ fontSize: 12, color: '#4b2a67', display: 'block', marginBottom: 4 }}>渠道</label>
+                  <select
+                    value={bindChannelType}
+                    onChange={(e) => setBindChannelType(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 10, cursor: 'pointer' }}
+                  >
+                    {payChannelOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <label style={{ fontSize: 12, color: '#4b2a67', display: 'block', marginBottom: 4 }}>备注名（可选）</label>
+                  <input
+                    value={bindLabel}
+                    onChange={(e) => setBindLabel(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 10 }}
+                    placeholder="例如：本人微信 / 公司卡"
+                  />
+                  <label style={{ fontSize: 12, color: '#4b2a67', display: 'block', marginBottom: 4 }}>
+                    账户标识（脱敏，至少 2 字）
+                  </label>
+                  <input
+                    value={bindAccountMask}
+                    onChange={(e) => setBindAccountMask(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 10 }}
+                    placeholder="尾号 1234 / 地址 0xabc…末尾"
+                  />
+                  <label style={{ fontSize: 12, color: '#4b2a67', display: 'block', marginBottom: 4 }}>
+                    外部参考号（可选）
+                  </label>
+                  <input
+                    value={bindAccountRef}
+                    onChange={(e) => setBindAccountRef(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 10 }}
+                    placeholder="订单号、商户侧 ID 等"
+                  />
+                  <label style={{ fontSize: 12, color: '#4b2a67', display: 'block', marginBottom: 4 }}>补充说明（可选）</label>
+                  <input
+                    value={bindExtraNote}
+                    onChange={(e) => setBindExtraNote(e.target.value)}
+                    style={{ ...inputStyle, width: '100%', marginBottom: 10 }}
+                  />
+                  <label
+                    style={{
+                      fontSize: 12,
+                      color: '#4b2a67',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      marginBottom: 12,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={bindSetDefault}
+                      onChange={(e) => setBindSetDefault(e.target.checked)}
+                    />
+                    添加后设为默认
+                  </label>
+                  <button type="button" onClick={submitPaymentBinding} className="cosmic-btn" style={{ ...primaryBtn, width: '100%' }}>
+                    保存支付方式
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                  <button type="button" onClick={() => setShowPaymentBindModal(false)} className="cosmic-btn" style={ghostBtn}>
+                    关闭
                   </button>
                 </div>
               </div>

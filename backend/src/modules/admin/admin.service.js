@@ -4,14 +4,17 @@ const { signToken } = require('../../config/jwt');
 const DEFAULT_RECHARGE_CHANNEL_OPTIONS = [
   { value: 'wechat', label: '微信' },
   { value: 'alipay', label: '支付宝' },
-  { value: 'manual', label: '人工代充' },
-  { value: 'cold_wallet', label: '冷钱包' }
+  { value: 'bank_card', label: '银行卡' },
+  { value: 'cold_wallet', label: '冷钱包' },
+  { value: 'manual', label: '人工代充' }
 ];
 let hasRechargeOrderPayChannelCache = null;
 let hasSupportRechargeRequestPayChannelCache = null;
 let hasUserDailyGrowthTableCache = null;
 let hasSupportFollowupTasksTableCache = null;
 let hasFollowupPhase5ColumnsCache = null;
+let hasGrowthEvidenceTableCache = null;
+let hasIdentityBadgeUnlockTableCache = null;
 const DEFAULT_ASSIST_REJECT_REASONS = [
   '客户信息不完整',
   '支付凭证无效',
@@ -119,6 +122,34 @@ async function hasFollowupPhase5Columns() {
   return hasFollowupPhase5ColumnsCache;
 }
 
+async function hasGrowthEvidenceTable() {
+  if (hasGrowthEvidenceTableCache !== null) {
+    return hasGrowthEvidenceTableCache;
+  }
+  const [rows] = await pool.query(
+    `SELECT COUNT(1) AS total
+     FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'user_growth_evidence'`
+  );
+  hasGrowthEvidenceTableCache = Number(rows[0]?.total || 0) > 0;
+  return hasGrowthEvidenceTableCache;
+}
+
+async function hasIdentityBadgeUnlockTable() {
+  if (hasIdentityBadgeUnlockTableCache !== null) {
+    return hasIdentityBadgeUnlockTableCache;
+  }
+  const [rows] = await pool.query(
+    `SELECT COUNT(1) AS total
+     FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'user_identity_badge_unlocks'`
+  );
+  hasIdentityBadgeUnlockTableCache = Number(rows[0]?.total || 0) > 0;
+  return hasIdentityBadgeUnlockTableCache;
+}
+
 function formatSqlDate(value) {
   if (!value) return '';
   if (value instanceof Date) {
@@ -129,6 +160,13 @@ function formatSqlDate(value) {
   }
   const s = String(value);
   return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function getEvidencePhaseByDay(dayIndex) {
+  const safeDay = Math.max(1, Number(dayIndex) || 1);
+  if (safeDay <= 7) return { phase: 'day_1_7', phase_label: '第1-7天' };
+  if (safeDay <= 21) return { phase: 'day_8_21', phase_label: '第8-21天' };
+  return { phase: 'day_22_90', phase_label: '第22-90天' };
 }
 
 async function adminLogin({ account, password }) {
@@ -310,13 +348,97 @@ async function getCustomerDetail(userId) {
     }
   };
 
+  let identity = null;
+  if (mindsetRows.length > 0) {
+    const latest = mindsetRows[0] || {};
+    const streakRows = [...mindsetRows].sort((a, b) => new Date(a.practice_date).getTime() - new Date(b.practice_date).getTime());
+    let currentStreak = 0;
+    for (let i = streakRows.length - 1; i >= 0; i -= 1) {
+      if (Number(streakRows[i].action_done) === 1) currentStreak += 1;
+      else break;
+    }
+    let evidenceCount = 0;
+    if (await hasGrowthEvidenceTable()) {
+      const [countRows] = await pool.query(
+        `SELECT COUNT(1) AS total
+         FROM user_growth_evidence
+         WHERE user_id = ?`,
+        [userId]
+      );
+      evidenceCount = Number(countRows[0]?.total || 0);
+    }
+    const levelScore = Number(
+      (
+        currentStreak * 1.2 +
+        Number(latest.self_confirmation_score || 50) * 0.3 +
+        Number(latest.action_consistency_index || 50) * 0.3 -
+        Number(latest.fear_interference_index || 50) * 0.2 +
+        evidenceCount * 2
+      ).toFixed(2)
+    );
+    const levels = [
+      { level: 1, name: '萌芽者', min: 0 },
+      { level: 2, name: '觉醒者', min: 80 },
+      { level: 3, name: '践行者', min: 140 },
+      { level: 4, name: '进化者', min: 200 },
+      { level: 5, name: '引领者', min: 280 }
+    ];
+    let currentLevel = levels[0];
+    for (const item of levels) {
+      if (levelScore >= item.min) currentLevel = item;
+    }
+    let badgeUnlocks = [];
+    if (await hasIdentityBadgeUnlockTable()) {
+      [badgeUnlocks] = await pool.query(
+        `SELECT badge_key, badge_title, source_type, unlocked_at
+         FROM user_identity_badge_unlocks
+         WHERE user_id = ?
+         ORDER BY unlocked_at DESC, id DESC
+         LIMIT 20`,
+        [userId]
+      );
+    }
+    let evidenceRows = [];
+    if (await hasGrowthEvidenceTable()) {
+      [evidenceRows] = await pool.query(
+        `SELECT id, title, content, source_type, evidence_date, created_at
+         FROM user_growth_evidence
+         WHERE user_id = ?
+         ORDER BY id DESC
+         LIMIT 20`,
+        [userId]
+      );
+    }
+    const userCreatedAt = profile.created_at ? new Date(profile.created_at) : new Date();
+    evidenceRows = evidenceRows.map((row) => {
+      const t = row.created_at || row.evidence_date;
+      const cur = t ? new Date(t) : new Date();
+      const diff = cur.getTime() - userCreatedAt.getTime();
+      const dayIndex = Math.floor(diff / (1000 * 60 * 60 * 24)) + 1;
+      return {
+        ...row,
+        ...getEvidencePhaseByDay(dayIndex)
+      };
+    });
+    identity = {
+      level: currentLevel.level,
+      levelName: currentLevel.name,
+      levelScore,
+      currentStreak,
+      evidenceCount,
+      badgeUnlocks,
+      evidences: evidenceRows
+    };
+  }
+
   return {
     profile: users[0],
     tags: tagsRows,
     tests: lotteryRows,
     recharges: rechargeRows,
     energy: energyRows,
-    mindset: mindsetSummary
+    mindset: mindsetSummary,
+    identity
   };
 }
 

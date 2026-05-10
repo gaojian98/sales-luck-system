@@ -1,6 +1,7 @@
 const pool = require('../../config/db');
 const bcrypt = require('bcryptjs');
 const { signToken } = require('../../config/jwt');
+const { getBusinessParamInt } = require('../../lib/business-param');
 
 async function register(data) {
   const { username, phone, email, password } = data;
@@ -28,22 +29,24 @@ async function register(data) {
 
   const userId = result.insertId;
 
+  const giftPoints = await getBusinessParamInt('REGISTER_GIFT_POINTS', 48, { min: 0, max: 100000 });
+
   await pool.query(
     `INSERT INTO user_wallets (user_id, points_balance, energy_balance)
-     VALUES (?, 50, 0)`,
-    [userId]
+     VALUES (?, ?, 0)`,
+    [userId, giftPoints]
   );
 
   await pool.query(
     `INSERT INTO point_logs (user_id, type, change_amount, balance_after, source, remark)
-     VALUES (?, 'register_gift', 50, 50, 'system', '注册赠送积分')`,
-    [userId]
+     VALUES (?, 'register_gift', ?, ?, 'system', '注册赠送积分')`,
+    [userId, giftPoints, giftPoints]
   );
 
   return {
     userId,
     username,
-    points: 50
+    points: giftPoints
   };
 }
 

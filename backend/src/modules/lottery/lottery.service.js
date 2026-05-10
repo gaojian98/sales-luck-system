@@ -1,4 +1,5 @@
 const pool = require('../../config/db');
+const { getBusinessParamInt } = require('../../lib/business-param');
 
 function drawReward(hasEnergyBoost = false) {
   const rand = Math.random() * 100;
@@ -18,41 +19,42 @@ function drawReward(hasEnergyBoost = false) {
   return { type: 'retry', value: 0 };
 }
 
-
 async function spin(userId) {
+  const spinCost = await getBusinessParamInt('LOTTERY_SPIN_POINTS_COST', 22, { min: 1, max: 9999 });
+  const energyBoostCost = await getBusinessParamInt('LOTTERY_ENERGY_BOOST_COST', 1, { min: 1, max: 100 });
+
   const conn = await pool.getConnection();
 
   try {
     await conn.beginTransaction();
 
     const [walletRows] = await conn.query(
-  'SELECT points_balance, energy_balance FROM user_wallets WHERE user_id = ? FOR UPDATE',
-  [userId]
-);
+      'SELECT points_balance, energy_balance FROM user_wallets WHERE user_id = ? FOR UPDATE',
+      [userId]
+    );
 
     if (walletRows.length === 0) {
       throw new Error('钱包不存在');
     }
 
     let points = walletRows[0].points_balance;
-let energy = walletRows[0].energy_balance;
-let usedEnergy = 0;
-let hasEnergyBoost = false;
+    let energy = walletRows[0].energy_balance;
+    let usedEnergy = 0;
+    let hasEnergyBoost = false;
 
-if (energy > 0) {
-  hasEnergyBoost = true;
-  usedEnergy = 1;
-  energy -= 1;
-}
+    if (energy >= energyBoostCost) {
+      hasEnergyBoost = true;
+      usedEnergy = energyBoostCost;
+      energy -= energyBoostCost;
+    }
 
-    if (points < 10) {
+    if (points < spinCost) {
       throw new Error('积分不足');
     }
 
     const pointsBefore = points;
 
-    // 扣积分
-    points -= 10;
+    points -= spinCost;
 
     const reward = drawReward(hasEnergyBoost);
 
@@ -62,13 +64,11 @@ if (energy > 0) {
 
     const pointsAfter = points;
 
-    // 更新钱包
     await conn.query(
-  'UPDATE user_wallets SET points_balance = ?, energy_balance = ? WHERE user_id = ?',
-  [pointsAfter, energy, userId]
-);
+      'UPDATE user_wallets SET points_balance = ?, energy_balance = ? WHERE user_id = ?',
+      [pointsAfter, energy, userId]
+    );
 
-    // 写记录
     await conn.query(
       `INSERT INTO lottery_records 
       (user_id, reward_type, reward_value, points_before, points_after)
@@ -76,26 +76,27 @@ if (energy > 0) {
       [userId, reward.type, reward.value, pointsBefore, pointsAfter]
     );
 
-if (usedEnergy > 0) {
-  await conn.query(
-    `INSERT INTO energy_logs
+    if (usedEnergy > 0) {
+      await conn.query(
+        `INSERT INTO energy_logs
     (user_id, type, change_amount, balance_after, source, remark)
-    VALUES (?, 'lottery_boost', ?, ?, 'lottery', '抽奖使用能量值提升中奖率')`,
-    [userId, -usedEnergy, energy]
-  );
-}
+    VALUES (?, 'lottery_boost', ?, ?, 'lottery', ?)`,
+        [userId, -usedEnergy, energy, `抽奖消耗 ${usedEnergy} 点能量提升奖池`]
+      );
+    }
     await conn.commit();
 
-   return {
-  reward_type: reward.type,
-  reward_value: reward.value,
-  pointsBefore,
-  pointsAfter,
-  usedEnergy,
-  energyAfter: energy,
-  boosted: hasEnergyBoost
-};
-
+    return {
+      reward_type: reward.type,
+      reward_value: reward.value,
+      pointsBefore,
+      pointsAfter,
+      usedEnergy,
+      energyAfter: energy,
+      boosted: hasEnergyBoost,
+      spinPointsCost: spinCost,
+      energyBoostCost
+    };
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -103,6 +104,7 @@ if (usedEnergy > 0) {
     conn.release();
   }
 }
+
 async function records(userId) {
   const [rows] = await pool.query(
     `SELECT id, reward_type, reward_value, points_before, points_after, created_at
@@ -116,6 +118,4 @@ async function records(userId) {
   return rows;
 }
 
-module.exports = { spin,records };
-
-
+module.exports = { spin, records };

@@ -7,6 +7,7 @@ const communityRoutes = require('../modules/community/community.routes');
 const growthRoutes = require('../modules/growth/growth.routes');
 const mindsetRoutes = require('../modules/mindset/mindset.routes');
 const publicRoutes = require('../modules/public/public.routes');
+const paymentBindingRoutes = require('../modules/payment-binding/payment-binding.routes');
 const adminRoutes = require('../modules/admin/admin.routes');
 
 const router = express.Router();
@@ -19,6 +20,7 @@ router.use('/community', communityRoutes);
 router.use('/growth', growthRoutes);
 router.use('/mindset', mindsetRoutes);
 router.use('/public', publicRoutes);
+router.use('/payment-bindings', paymentBindingRoutes);
 router.use('/admin', adminRoutes);
 
 

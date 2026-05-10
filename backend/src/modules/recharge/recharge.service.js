@@ -33,7 +33,7 @@ async function getPackages() {
 
 function normalizePayChannel(payChannel) {
   const value = String(payChannel || '').trim().toLowerCase();
-  const allowed = new Set(['wechat', 'alipay', 'manual', 'cold_wallet']);
+  const allowed = new Set(['wechat', 'alipay', 'bank_card', 'manual', 'cold_wallet']);
   return allowed.has(value) ? value : 'manual';
 }
 

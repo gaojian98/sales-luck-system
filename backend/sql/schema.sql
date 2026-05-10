@@ -35,6 +35,26 @@ CREATE TABLE IF NOT EXISTS user_wallets (
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS user_payment_bindings (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  channel_type VARCHAR(32) NOT NULL,
+  label VARCHAR(64) DEFAULT NULL,
+  account_mask VARCHAR(120) NOT NULL,
+  account_ref VARCHAR(128) DEFAULT NULL,
+  extra_note VARCHAR(255) DEFAULT NULL,
+  is_default TINYINT NOT NULL DEFAULT 0,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_payment_bind_user_status (user_id, status),
+  KEY idx_payment_bind_user_default (user_id, is_default),
+  CONSTRAINT fk_payment_bind_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS point_logs (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -67,6 +87,25 @@ CREATE TABLE IF NOT EXISTS energy_logs (
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS energy_cash_redemptions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  energy_amount INT NOT NULL,
+  cash_amount DECIMAL(10, 2) NOT NULL,
+  energy_per_yuan_snapshot INT NOT NULL,
+  payment_binding_id BIGINT UNSIGNED DEFAULT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  admin_note VARCHAR(255) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_energy_redeem_user_status (user_id, status),
+  KEY idx_energy_redeem_created (created_at),
+  CONSTRAINT fk_energy_redeem_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS user_daily_growth (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -80,12 +119,87 @@ CREATE TABLE IF NOT EXISTS user_daily_growth (
   self_confirmation_score INT NOT NULL DEFAULT 50,
   fear_interference_index INT NOT NULL DEFAULT 50,
   action_consistency_index INT NOT NULL DEFAULT 50,
+  self_eval_score INT DEFAULT NULL,
+  self_eval_note VARCHAR(255) DEFAULT NULL,
+  weekly_fear_score INT DEFAULT NULL,
+  weekly_inferiority_score INT DEFAULT NULL,
+  weekly_assessment_note VARCHAR(255) DEFAULT NULL,
+  weekly_assessed_at DATETIME DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_user_daily_growth (user_id, practice_date),
   KEY idx_user_daily_growth_user_date (user_id, practice_date),
   CONSTRAINT fk_user_daily_growth_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_weekly_goals (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  week_start_date DATE NOT NULL,
+  goal_title VARCHAR(120) NOT NULL,
+  goal_description VARCHAR(500) DEFAULT NULL,
+  split_tasks TEXT DEFAULT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  completion_rate INT NOT NULL DEFAULT 0,
+  evidence_note VARCHAR(500) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_weekly_goal_user_week (user_id, week_start_date),
+  KEY idx_weekly_goal_user_week (user_id, week_start_date),
+  CONSTRAINT fk_weekly_goal_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_psych_empowerment_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  tool_type VARCHAR(32) NOT NULL,
+  input_text VARCHAR(500) DEFAULT NULL,
+  output_text TEXT DEFAULT NULL,
+  distress_before INT DEFAULT NULL,
+  distress_after INT DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_psych_logs_user_type_created (user_id, tool_type, created_at),
+  CONSTRAINT fk_psych_logs_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_growth_evidence (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  content VARCHAR(500) NOT NULL,
+  source_type VARCHAR(32) NOT NULL DEFAULT 'manual',
+  evidence_date DATE NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_growth_evidence_user_date (user_id, evidence_date),
+  CONSTRAINT fk_growth_evidence_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_identity_badge_unlocks (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  badge_key VARCHAR(64) NOT NULL,
+  badge_title VARCHAR(120) NOT NULL,
+  source_type VARCHAR(32) NOT NULL DEFAULT 'system',
+  unlocked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_identity_badge_user_key (user_id, badge_key),
+  KEY idx_identity_badge_user_unlocked (user_id, unlocked_at),
+  CONSTRAINT fk_identity_badge_user
     FOREIGN KEY (user_id) REFERENCES users(id)
     ON DELETE CASCADE
 ) ENGINE=InnoDB;

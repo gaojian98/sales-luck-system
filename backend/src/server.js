@@ -445,6 +445,7 @@ app.get('/admin', (req, res) => {
       let customerPage = 1;
       const customerPageSize = 20;
       let customerDetailSortDesc = true;
+      let customerIdentitySortDesc = true;
       let rechargeChannelOptions = [
         { value: 'wechat', label: '微信' },
         { value: 'alipay', label: '支付宝' },
@@ -709,6 +710,7 @@ app.get('/admin', (req, res) => {
         const recharges = Array.isArray(detail.recharges) ? [...detail.recharges] : [];
         const energy = Array.isArray(detail.energy) ? [...detail.energy] : [];
         const mindset = detail.mindset || {};
+        const identity = detail.identity || {};
 
         const sortByDate = (a, b) => {
           const ta = new Date(a?.created_at || 0).getTime();
@@ -800,11 +802,102 @@ app.get('/admin', (req, res) => {
           ]
         );
 
+        const identityTable = renderRows(
+          [{
+            level: identity.level ? ('Lv.' + identity.level + ' ' + (identity.levelName || '')) : '--',
+            levelScore: identity.levelScore ?? '--',
+            currentStreak: identity.currentStreak ?? '--',
+            evidenceCount: identity.evidenceCount ?? '--'
+          }],
+          [
+            { title: '身份等级', render: (r) => r.level },
+            { title: '身份分', render: (r) => r.levelScore },
+            { title: '连续行动天数', render: (r) => r.currentStreak },
+            { title: '证据墙数量', render: (r) => r.evidenceCount }
+          ]
+        );
+
+        const badgeUnlocks = Array.isArray(identity.badgeUnlocks) ? identity.badgeUnlocks : [];
+        const sortIdentityRowsByTime = (rows, fields) => {
+          const list = Array.isArray(rows) ? [...rows] : [];
+          list.sort((a, b) => {
+            const getTs = (row) => {
+              for (const key of fields) {
+                if (row?.[key]) return new Date(row[key]).getTime();
+              }
+              return 0;
+            };
+            const ta = getTs(a);
+            const tb = getTs(b);
+            return customerIdentitySortDesc ? tb - ta : ta - tb;
+          });
+          return list;
+        };
+
+        const badgeRows = sortIdentityRowsByTime(badgeUnlocks, ['unlocked_at', 'created_at']);
+        const buildBadgeTable = () => renderRows(
+          badgeRows.slice(0, 10),
+          [
+            { title: '徽章Key', render: (r) => r.badge_key || '-' },
+            { title: '徽章名称', render: (r) => r.badge_title || '-' },
+            { title: '来源', render: (r) => r.source_type || '-' },
+            { title: '领取时间', render: (r) => r.unlocked_at || '-' }
+          ]
+        );
+        const badgeTable = buildBadgeTable();
+
+        const evidenceRows = sortIdentityRowsByTime(Array.isArray(identity.evidences) ? identity.evidences : [], ['created_at', 'evidence_date']);
+        const evidencePhaseOptions = [
+          { value: 'all', label: '全部阶段' },
+          { value: 'day_1_7', label: '第1-7天' },
+          { value: 'day_8_21', label: '第8-21天' },
+          { value: 'day_22_90', label: '第22-90天' }
+        ];
+        const buildEvidenceTable = (phase = 'all') => {
+          const filtered = phase === 'all'
+            ? evidenceRows
+            : evidenceRows.filter((r) => (r.phase || '') === phase);
+          return renderRows(
+            filtered.slice(0, 10),
+            [
+              { title: '证据ID', render: (r) => r.id ?? '-' },
+              { title: '标题', render: (r) => r.title || '-' },
+              { title: '内容', render: (r) => r.content || '-' },
+              { title: '阶段', render: (r) => r.phase_label || '-' },
+              { title: '来源', render: (r) => r.source_type || '-' },
+              { title: '日期', render: (r) => r.evidence_date || '-' }
+            ]
+          );
+        };
+        const evidenceTable = buildEvidenceTable('all');
+        const evidencePhaseSelect = '<select id="evidencePhaseFilter">' +
+          evidencePhaseOptions.map((item) => (
+            '<option value="' + esc(item.value) + '">' + esc(item.label) + '</option>'
+          )).join('') +
+          '</select>';
+        const evidenceSectionHtml = '<div class="detail-section"><div class="section-tools">' +
+          evidencePhaseSelect +
+          '<button id="btnToggleIdentitySort" class="secondary">身份排序：' + (customerIdentitySortDesc ? '倒序' : '正序') + '</button>' +
+          '<button id="btnExportEvidenceCsv" class="secondary">导出证据CSV</button>' +
+          '</div><h4>成长证据墙（最近10条）</h4><div id="customerEvidenceTableWrap">' + evidenceTable + '</div></div>';
+
+        const evidenceColumns = [
+          { title: '证据ID', render: (r) => r.id ?? '-' },
+          { title: '标题', render: (r) => r.title || '-' },
+          { title: '内容', render: (r) => r.content || '-' },
+          { title: '阶段', render: (r) => r.phase_label || '-' },
+          { title: '来源', render: (r) => r.source_type || '-' },
+          { title: '日期', render: (r) => r.evidence_date || '-' }
+        ];
+
         document.getElementById('customerDetail').innerHTML = [
           '<div class="detail-section"><div class="section-tools"><button id="btnCreateFollowupFromDetail" type="button">一键创建D1/D3/D7</button><button id="btnFillFollowupFromDetail" type="button" class="secondary">仅填入客户ID</button></div><h4>基础信息</h4>' + profileTable + '</div>',
           '<div class="detail-section"><h4 id="customerRiskBadge">风险分层：--</h4></div>',
           '<div class="detail-section"><h4>客户标签</h4>' + tagsTable + '</div>',
           '<div class="detail-section"><h4>心理画像（周对比）</h4>' + mindsetTable + '</div>',
+          '<div class="detail-section"><h4>身份升级（等级）</h4>' + identityTable + '</div>',
+          '<div class="detail-section"><h4>徽章领取记录（最近10条）</h4><div id="customerBadgeTableWrap">' + badgeTable + '</div></div>',
+          evidenceSectionHtml,
           '<div class="detail-section"><div class="section-tools"><button id="btnToggleDetailSort" class="secondary">时间排序：' + (customerDetailSortDesc ? '倒序' : '正序') + '</button><button id="btnExportTestsCsv" class="secondary">导出检测CSV</button></div><h4>检测记录（最近10条）</h4>' + testsTable + '</div>',
           '<div class="detail-section"><div class="section-tools"><button id="btnCopyOrders" class="secondary">复制订单号</button><button id="btnExportRechargesCsv" class="secondary">导出充值CSV</button></div><h4>充值记录（最近10条）</h4>' + rechargesTable + '</div>',
           '<div class="detail-section"><div class="section-tools"><button id="btnExportEnergyCsv" class="secondary">导出能量CSV</button></div><h4>能量变更（最近10条）</h4>' + energyTable + '</div>'
@@ -861,6 +954,12 @@ app.get('/admin', (req, res) => {
           { title: '时间', render: (r) => r.created_at || '-' }
         ];
 
+        const getFilteredEvidenceRows = () => {
+          const phase = document.getElementById('evidencePhaseFilter')?.value || 'all';
+          if (phase === 'all') return evidenceRows;
+          return evidenceRows.filter((r) => (r.phase || '') === phase);
+        };
+
         const ordersText = recharges
           .map((item) => item.order_no)
           .filter(Boolean)
@@ -893,6 +992,10 @@ app.get('/admin', (req, res) => {
           customerDetailSortDesc = !customerDetailSortDesc;
           renderCustomerDetail(detail);
         });
+        document.getElementById('btnToggleIdentitySort')?.addEventListener('click', () => {
+          customerIdentitySortDesc = !customerIdentitySortDesc;
+          renderCustomerDetail(detail);
+        });
         document.getElementById('btnCopyOrders')?.addEventListener('click', async () => {
           try {
             await navigator.clipboard.writeText(ordersText || '');
@@ -909,6 +1012,16 @@ app.get('/admin', (req, res) => {
         });
         document.getElementById('btnExportEnergyCsv')?.addEventListener('click', () => {
           downloadCsv('customer_energy_logs.csv', toCsv(energy, energyColumns));
+        });
+        document.getElementById('evidencePhaseFilter')?.addEventListener('change', () => {
+          const wrap = document.getElementById('customerEvidenceTableWrap');
+          if (!wrap) return;
+          const phase = document.getElementById('evidencePhaseFilter')?.value || 'all';
+          wrap.innerHTML = buildEvidenceTable(phase);
+        });
+        document.getElementById('btnExportEvidenceCsv')?.addEventListener('click', () => {
+          const filtered = getFilteredEvidenceRows();
+          downloadCsv('customer_growth_evidence.csv', toCsv(filtered, evidenceColumns));
         });
       }
 

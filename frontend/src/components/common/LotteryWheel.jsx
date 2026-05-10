@@ -447,18 +447,7 @@ ctx.shadowColor = 'transparent';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('开始', center, center);
-  // ===== 标准 Benham 黑色短弧线：最后画，放最上层 =====
-ctx.save();
-
-// 只允许画在白色半圆
-ctx.beginPath();
-ctx.moveTo(center, center);
-ctx.arc(center, center, radius, -Math.PI / 2, Math.PI / 2, true);
-ctx.closePath();
-ctx.clip();
-
-ctx.restore();
-  
+    ctx.restore();
   }
 
   function getAngleForScore(score) {
@@ -604,8 +593,13 @@ ctx.restore();
 
     await new Promise((resolve) => setTimeout(resolve, 250));
 
-    if (typeof onSpin === 'function') {
-      await onSpin();
+    try {
+      if (typeof onSpin === 'function') {
+        await onSpin();
+      }
+    } catch (err) {
+      console.error(err);
+      setAnimating(false);
     }
   }
 
